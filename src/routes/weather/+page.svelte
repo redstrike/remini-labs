@@ -7,7 +7,7 @@
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import { Skeleton } from "$lib/components/ui/skeleton/index.js";
-  import { MapPin, Loader2, Cloud, Sun, CloudRain, Snowflake, Wind, Droplets, RefreshCw } from "lucide-svelte";
+  import { MapPin, LoaderCircle, Cloud, Sun, CloudRain, Snowflake, Wind, Droplets, RefreshCw } from "lucide-svelte";
 
   let { data } = $props<{ data: PageData }>();
 
@@ -130,10 +130,12 @@
 
   onMount(async () => {
     // Check if we have SSR data
-    const ssrWeather = await data.streamed.weatherData;
-    if (ssrWeather && !ssrWeather.error) {
-       liveWeather = { ...ssrWeather, timestamp: Date.now() };
-       return; // Rely on SSR, no immediate CSR fetch to save calls
+    if (data.streamed && data.streamed.weatherData) {
+      const ssrWeather = await data.streamed.weatherData;
+      if (ssrWeather && Object.keys(ssrWeather).length > 0 && !ssrWeather.error) {
+         liveWeather = { ...ssrWeather, timestamp: Date.now() };
+         return; // Rely on SSR, no immediate CSR fetch to save calls
+      }
     }
 
     // Load from cache first
@@ -159,7 +161,7 @@
         <h1 class="text-3xl font-bold tracking-tight flex items-center gap-2">
           Local Weather
           {#if isUpdatingInBg || loadingState === 'fetching' || loadingState === 'locating'}
-             <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
+             <LoaderCircle class="w-4 h-4 animate-spin text-muted-foreground" />
           {/if}
         </h1>
         <div class="flex items-center gap-2 text-muted-foreground mt-1">
@@ -305,7 +307,7 @@
           </div>
           <Button class="mt-4" size="lg" onclick={() => requestLocation(false)} disabled={loadingState !== 'idle'}>
             {#if loadingState !== 'idle'}
-              <Loader2 class="mr-2 h-5 w-5 animate-spin" />
+              <LoaderCircle class="mr-2 h-5 w-5 animate-spin" />
               Locating...
             {:else}
               <MapPin class="mr-2 h-5 w-5" />

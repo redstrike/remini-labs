@@ -33,6 +33,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.2.1
         version: 4.2.1(vite@5.4.21(lightningcss@1.31.1))
+      '@vitejs/plugin-basic-ssl':
+        specifier: ^2.1.4
+        version: 2.1.4(vite@5.4.21(lightningcss@1.31.1))
       autoprefixer:
         specifier: ^10.4.16
         version: 10.4.27(postcss@8.5.6)
@@ -610,6 +613,12 @@ packages:
 
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
+
+  '@vitejs/plugin-basic-ssl@2.1.4':
+    resolution: {integrity: sha512-HXciTXN/sDBYWgeAD4V4s0DN0g72x5mlxQhHxtYu3Tt8BLa6MzcJZUyDVFCdtjNs3bfENVHVzOsmooTVuNgAAw==}
+    engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
+    peerDependencies:
+      vite: ^6.0.0 || ^7.0.0
 
   acorn@8.16.0:
     resolution: {integrity: sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw==}
@@ -1395,6 +1404,10 @@ snapshots:
   '@types/estree@1.0.8': {}
 
   '@types/trusted-types@2.0.7': {}
+
+  '@vitejs/plugin-basic-ssl@2.1.4(vite@5.4.21(lightningcss@1.31.1))':
+    dependencies:
+      vite: 5.4.21(lightningcss@1.31.1)
 
   acorn@8.16.0: {}
 

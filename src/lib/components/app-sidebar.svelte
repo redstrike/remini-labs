@@ -4,11 +4,7 @@
 </script>
 
 <Sidebar.Root>
-  <Sidebar.Header>
-    <div class="flex items-center justify-center p-4 py-6 text-xl font-bold tracking-tight text-primary">
-      MegaApp
-    </div>
-  </Sidebar.Header>
+  <Sidebar.Header></Sidebar.Header>
   <Sidebar.Content>
     <Sidebar.Group>
       <Sidebar.GroupLabel>Mini Apps</Sidebar.GroupLabel>
@@ -29,7 +25,7 @@
               {#snippet child({ props })}
                 <a href="/weather" {...props}>
                   <CloudRain />
-                  <span>Weather App</span>
+                  <span>Weather</span>
                 </a>
               {/snippet}
             </Sidebar.MenuButton>

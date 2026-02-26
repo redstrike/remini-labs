@@ -1,37 +1,29 @@
 <script lang="ts">
-  import { CloudRain } from "lucide-svelte";
-  import { Button } from "$lib/components/ui/button/index.js";
+  import { CloudRain, Sparkles } from "lucide-svelte";
 </script>
 
-<main class="container mx-auto p-6 md:p-10 max-w-5xl">
-  <div class="grid gap-6">
-    <div class="flex flex-col gap-2">
-      <h2 class="text-3xl font-bold tracking-tight">Welcome back</h2>
-      <p class="text-muted-foreground">Select a mini-app to get started.</p>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
-      <!-- Weather App Card -->
-      <a href="/weather" class="block group">
-        <div class="rounded-xl border bg-card text-card-foreground shadow transition-all hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-hidden h-full flex flex-col items-start gap-4 p-6">
-          <div class="rounded-lg bg-primary/10 p-3 text-primary group-hover:scale-110 transition-transform">
-            <CloudRain class="w-8 h-8" />
-          </div>
-          <div class="flex flex-col gap-1">
-            <h3 class="font-semibold leading-none tracking-tight">Weather App</h3>
-            <p class="text-sm text-muted-foreground line-clamp-2">Check the current weather and forecasts for any location.</p>
-          </div>
-          <div class="mt-auto pt-4 w-full">
-            <Button variant="secondary" class="w-full">Open App</Button>
-          </div>
-        </div>
-      </a>
-      
-      <!-- Placeholder for future apps -->
-      <div class="rounded-xl border border-dashed text-card-foreground shadow-sm bg-transparent flex flex-col items-center justify-center gap-2 p-8 text-center min-h-[220px]">
-        <span class="text-4xl">✨</span>
-        <h3 class="font-medium">More apps coming soon</h3>
+<main class="container mx-auto p-4 md:p-8 max-w-5xl h-[100dvh] pt-12">
+  <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-x-4 gap-y-6">
+    <!-- Weather App Icon -->
+    <a href="/weather" class="group flex flex-col items-center gap-2 tap-highlight-transparent">
+      <div class="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-sm transition-transform active:scale-90 flex items-center justify-center">
+        <CloudRain class="w-8 h-8" strokeWidth={1.5} />
       </div>
+      <span class="text-xs font-medium text-center leading-tight line-clamp-2 text-foreground/90">Weather</span>
+    </a>
+    
+    <!-- Placeholder for future apps -->
+    <div class="group flex flex-col items-center gap-2 tap-highlight-transparent cursor-default">
+      <div class="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl border-[1.5px] border-dashed border-muted-foreground/30 bg-muted/10 text-muted-foreground/60 transition-all duration-300 group-hover:border-primary/40 group-hover:bg-primary/5 group-hover:text-primary flex items-center justify-center active:scale-90">
+        <Sparkles class="w-7 h-7" strokeWidth={1.5} />
+      </div>
+      <span class="text-xs font-medium text-center leading-tight line-clamp-2 text-muted-foreground group-hover:text-foreground/80 transition-colors duration-300">More Apps</span>
     </div>
   </div>
 </main>
+
+<style>
+  .tap-highlight-transparent {
+    -webkit-tap-highlight-color: transparent;
+  }
+</style>
