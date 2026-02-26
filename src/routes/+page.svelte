@@ -1,13 +1,7 @@
 <script lang="ts">
   import { CloudRain } from "lucide-svelte";
   import { Button } from "$lib/components/ui/button/index.js";
-  import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 </script>
-
-<header class="sticky top-0 z-10 flex w-full items-center gap-2 border-b bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-  <Sidebar.Trigger />
-  <h1 class="text-xl font-bold">Mini App Launcher</h1>
-</header>
 
 <main class="container mx-auto p-6 md:p-10 max-w-5xl">
   <div class="grid gap-6">
