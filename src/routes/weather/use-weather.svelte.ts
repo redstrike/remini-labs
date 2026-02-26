@@ -60,7 +60,7 @@ export function useWeather() {
 			loadingState = 'idle';
 			let shouldFetch = true;
 
-			if (cachedWeather) {
+			if (!force && cachedWeather) {
 				const isLocationChanged = isDrasticLocationChange(
 					cachedWeather.lat,
 					cachedWeather.lng,
@@ -72,7 +72,7 @@ export function useWeather() {
 				if (isLocationChanged) {
 					// User moved >= 3km, must fetch new data regardless of time
 					shouldFetch = true;
-				} else if (!isStale && !force) {
+				} else if (!isStale) {
 					// Data is fresh and user hasn't moved significantly
 					shouldFetch = false;
 					loadingState = 'idle';

@@ -32,26 +32,19 @@
 					{/if}
 				</div>
 			</div>
-			<div>
+			<div class="w-full sm:w-auto flex justify-end">
 				{#if weather.displayWeather}
 					<div class="flex items-center gap-2">
 						<Button
-							variant="outline"
-							size="icon"
-							onclick={() => weather.requestLocation(true)}
-							disabled={weather.loadingState !== 'idle'}
-							title="Force fetch latest weather"
-						>
-							<RefreshCw class="h-4 w-4 {weather.loadingState !== 'idle' ? 'animate-spin' : ''}" />
-						</Button>
-						<Button
-							variant="outline"
+							variant="secondary"
 							size="sm"
+							class="rounded-full shadow-sm gap-2 px-4 transition-all hover:shadow-md"
 							onclick={() => weather.requestLocation(true)}
 							disabled={weather.loadingState !== 'idle'}
+							title="Refresh weather and location data"
 						>
-							<MapPin class="h-4 w-4 mr-2" />
-							Update Location
+							<RefreshCw class="h-4 w-4 {weather.loadingState !== 'idle' ? 'animate-spin text-primary' : 'text-muted-foreground'}" />
+							<span class="font-medium">Refresh</span>
 						</Button>
 					</div>
 				{/if}
