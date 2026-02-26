@@ -8,13 +8,21 @@
   const isHome   = $derived($page.url.pathname === '/');
   const qTab     = $derived($page.url.searchParams.get('tab'));
 
-  const NAV = [
+  type NavItem = {
+    id: string;
+    label: string;
+    href: string;
+    icon: string;
+    isCta?: boolean;
+  };
+
+  const NAV: NavItem[] = [
     { id:'home',     label:'Home',     href:'/',              icon:'⊞' },
     { id:'wallet',   label:'Wallet',   href:'/?tab=wallet',   icon:'💳' },
     { id:'qr',       label:'Scan',     href:'/?tab=qr',       icon:'◉',  isCta:true },
     { id:'activity', label:'Activity', href:'/?tab=activity', icon:'📋' },
     { id:'profile',  label:'Profile',  href:'/?tab=profile',  icon:'👤' },
-  ] as const;
+  ];
 
   function isActive(id: string) {
     if (id === 'home') return isHome;

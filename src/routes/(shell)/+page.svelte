@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PageData } from './$types';
   import { shellState } from '$lib/state/shell.svelte';
+  import type { MiniAppMeta } from '$lib/mini-apps/registry';
 
   let { data } = $props<{ data: PageData }>();
 
@@ -15,7 +16,7 @@
   const gridApps   = $derived(data.miniApps.slice(0, 8));
   const recentApps = $derived(
     shellState.recentSlugs
-      .map(slug => data.miniApps.find(a => a.slug === slug))
+      .map(slug => data.miniApps.find((a: MiniAppMeta) => a.slug === slug))
       .filter(Boolean)
   );
 </script>
