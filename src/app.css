@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 224 27% 7%;
+    --foreground: 0 0% 98%;
+    --card: 228 22% 12%;
+    --card-foreground: 0 0% 98%;
+    --popover: 228 22% 12%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 328 79% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 228 22% 18%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 228 15% 18%;
+    --muted-foreground: 220 10% 52%;
+    --accent: 228 22% 18%;
+    --accent-foreground: 0 0% 90%;
+    --destructive: 0 63% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 228 15% 16%;
+    --input: 228 15% 16%;
+    --ring: 328 79% 56%;
+    --radius: 0.875rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-[#0D0E14] text-white;
+    font-family: system-ui, -apple-system, 'SF Pro Display',
+      'Segoe UI', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100%;
+  }
+}
+
+/* ── Reusable utility classes ── */
+.shell-card {
+  @apply rounded-2xl p-4 border;
+  background: #16182A;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.badge-pill {
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border;
+}
+
+/* App icon tile */
+.app-icon-tile {
+  @apply flex flex-col items-center gap-1.5 cursor-pointer;
+}
+
+.app-icon-tile .icon-wrap {
+  @apply w-14 h-14 rounded-[18px] flex items-center justify-center text-2xl shadow-card;
+  position: relative;
+  overflow: hidden;
+}
+
+.app-icon-tile:active .icon-wrap {
+  transform: scale(0.92);
+  transition: transform 120ms ease;
+}
+
+.app-icon-tile .icon-label {
+  @apply text-[11px] font-medium text-center leading-tight;
+  color: rgba(255, 255, 255, 0.78);
+  max-width: 60px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tab-bar safe-area spacer */
+.tab-safe-spacer {
+  height: 4px;
+}
