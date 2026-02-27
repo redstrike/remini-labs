@@ -12,14 +12,50 @@ export function useWeather() {
 	let cachedWeather = $state<WeatherCacheItem | null>(null);
 	let liveWeather = $state<WeatherCacheItem | null>(null);
 	let now = $state(Date.now());
+	let permissionState = $state<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
+	let isApproxLocation = $state(false);
+	let ipCity = $state<string | null>(null);
+	let ipIsp = $state<string>(''); // ISP name from IP geolocation
+	let gpsCity = $state<string>(''); // reverse-geocoded label for GPS location
 
-	// Load cache and trigger initial location request
+	// Load cache, check permission, and trigger initial location request
 	onMount(async () => {
 		const cached = await asyncStorage.getItem<WeatherCacheItem>('weather_cache');
 		if (cached) {
 			cachedWeather = cached;
 		}
-		requestLocation();
+
+		// Query initial permission state and subscribe to changes
+		if ('permissions' in navigator) {
+			try {
+				const status = await navigator.permissions.query({ name: 'geolocation' });
+				permissionState = status.state;
+
+				// Reactively update permission state if user changes it in browser settings
+				status.onchange = () => {
+					permissionState = status.state;
+					// If user just granted permission, trigger a real GPS fetch
+					if (status.state === 'granted') {
+						isApproxLocation = false;
+						ipCity = null;
+						ipIsp = '';
+						gpsCity = '';
+						requestLocation();
+					}
+				};
+			} catch {
+				// Permissions API not supported or blocked — fall through to requestLocation()
+				permissionState = 'unknown';
+			}
+		}
+
+		if (permissionState === 'denied') {
+			// Skip the browser prompt entirely; go straight to IP fallback
+			await requestIpLocationFallback();
+		} else {
+			// Will prompt the user if state is 'prompt', or silently succeed if 'granted'
+			await requestLocation();
+		}
 	});
 
 	$effect(() => {
@@ -49,6 +85,35 @@ export function useWeather() {
 		}
 	}
 
+	async function requestIpLocationFallback() {
+		loadingState = 'locating';
+		locationError = null;
+		try {
+			const ipLocation = await fetchIpLocation();
+			isApproxLocation = true;
+			ipCity = ipLocation.city;
+			ipIsp = ipLocation.isp;
+			loadingState = 'idle';
+			await fetchWeatherData(ipLocation.lat, ipLocation.lng);
+		} catch (e: any) {
+			console.error('IP location fallback failed:', e);
+			locationError = 'Could not determine your location. Please enable GPS or try again later.';
+			loadingState = 'idle';
+		}
+	}
+
+	// Reverse geocode GPS coordinates in the background — sets gpsCity, never blocks weather load
+	async function reverseGeocode(lat: number, lng: number) {
+		try {
+			const res = await fetch(`/weather/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+			if (!res.ok) return;
+			const data = await res.json();
+			gpsCity = [data.city, data.country].filter(Boolean).join(', ');
+		} catch {
+			// Silently ignore — city label is a bonus, not critical
+		}
+	}
+
 	async function requestLocation(force: boolean = false) {
 		loadingState = 'locating';
 		locationError = null;
@@ -56,6 +121,12 @@ export function useWeather() {
 		try {
 			const position = await getUserLocation();
 			const { latitude, longitude } = position.coords;
+
+			// Successful GPS — clear any lingering IP-fallback flags
+			isApproxLocation = false;
+			ipCity = null;
+			ipIsp = '';
+			gpsCity = '';
 
 			loadingState = 'idle';
 			let shouldFetch = true;
@@ -79,13 +150,23 @@ export function useWeather() {
 				}
 			}
 
+			// Fire reverse geocoding in the background — doesn't block weather loading
+			reverseGeocode(latitude, longitude);
+
 			if (shouldFetch) {
 				await fetchWeatherData(latitude, longitude);
 			}
 		} catch (error: any) {
 			console.error('Geolocation error:', error);
-			locationError = error?.message || 'Please allow location access to see your local weather.';
-			loadingState = 'idle';
+
+			// If permission is denied, try IP fallback automatically
+			if (permissionState === 'denied' || error?.code === 1 /* PERMISSION_DENIED */) {
+				permissionState = 'denied';
+				await requestIpLocationFallback();
+			} else {
+				locationError = error?.message || 'Please allow location access to see your local weather.';
+				loadingState = 'idle';
+			}
 		}
 	}
 
@@ -95,6 +176,21 @@ export function useWeather() {
 		},
 		get locationError() {
 			return locationError;
+		},
+		get permissionState() {
+			return permissionState;
+		},
+		get isApproxLocation() {
+			return isApproxLocation;
+		},
+		get ipCity() {
+			return ipCity;
+		},
+		get ipIsp() {
+			return ipIsp;
+		},
+		get gpsCity() {
+			return gpsCity;
 		},
 		get displayWeather() {
 			return liveWeather || cachedWeather;
@@ -123,14 +219,25 @@ export function useWeather() {
 
 // Parse WMO Weather codes to human readable text and icons
 export function getWeatherCondition(code: number) {
-	if (code === 0) return { text: 'Clear sky', icon: Sun };
-	if (code === 1 || code === 2 || code === 3) return { text: 'Partly cloudy', icon: Cloud };
-	if (code >= 45 && code <= 48) return { text: 'Fog', icon: Cloud };
-	if (code >= 51 && code <= 67) return { text: 'Rain', icon: CloudRain };
-	if (code >= 71 && code <= 77) return { text: 'Snow', icon: Snowflake };
-	if (code >= 80 && code <= 82) return { text: 'Showers', icon: CloudRain };
-	if (code >= 95 && code <= 99) return { text: 'Thunderstorm', icon: CloudRain };
-	return { text: 'Unknown', icon: Cloud };
+	if (code === 0) return { text: 'Clear sky', icon: Sun, animationType: 'sun' as const };
+	if (code === 1 || code === 2 || code === 3) return { text: 'Partly cloudy', icon: Cloud, animationType: 'cloud' as const };
+	if (code >= 45 && code <= 48) return { text: 'Fog', icon: Cloud, animationType: 'cloud' as const };
+	if (code >= 51 && code <= 67) return { text: 'Rain', icon: CloudRain, animationType: 'rain' as const };
+	if (code >= 71 && code <= 77) return { text: 'Snow', icon: Snowflake, animationType: 'snow' as const };
+	if (code >= 80 && code <= 82) return { text: 'Showers', icon: CloudRain, animationType: 'rain' as const };
+	if (code >= 95 && code <= 99) return { text: 'Thunderstorm', icon: CloudRain, animationType: 'storm' as const };
+	return { text: 'Unknown', icon: Cloud, animationType: 'cloud' as const };
+}
+
+// IP-based coarse location via local SvelteKit proxy (/api/ip-location).
+// The proxy fetches ip.me server-side to avoid CORS restrictions.
+async function fetchIpLocation(): Promise<{ lat: number; lng: number; city: string; isp: string }> {
+	const res = await fetch('/weather/api/ip-location');
+	if (!res.ok) throw new Error(`IP location proxy returned ${res.status}`);
+	const data = await res.json();
+	// Build "City, Country" label — omit whichever part is missing
+	const city: string = [data.city, data.country].filter(Boolean).join(', ');
+	return { lat: data.lat, lng: data.lng, city, isp: data.isp ?? '' };
 }
 
 // Promisified Geolocation Wrapper

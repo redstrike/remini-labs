@@ -3,8 +3,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   webServer: {
     command: 'pnpm dev',
-    port: 5173,
+    url: 'https://localhost:5173',
     reuseExistingServer: !process.env.CI,
+    ignoreHTTPSErrors: true,
   },
   testDir: 'tests',
   testMatch: /(.+\.)?(test|spec)\.[jt]s/,
@@ -12,7 +13,8 @@ export default defineConfig({
   reporter: 'list',
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:5173',
+    baseURL: 'https://localhost:5173',
+    ignoreHTTPSErrors: true,
     trace: 'on-first-retry',
   },
   projects: [
