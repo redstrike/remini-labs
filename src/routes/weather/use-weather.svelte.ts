@@ -1,5 +1,5 @@
 import { asyncStorage } from '$lib/utils/storage'
-import { Sun, Cloud, CloudRain, Snowflake } from 'lucide-svelte'
+import { Sun, Cloud, CloudRain, Snowflake } from '@lucide/svelte'
 import { onMount } from 'svelte'
 
 const FRESHNESS_THRESHOLD = 30 * 60 * 1000 // 30 minutes in ms
