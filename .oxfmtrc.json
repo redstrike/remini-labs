@@ -1,0 +1,32 @@
+{
+	// Oxfmt configuration options: https://oxc.rs/docs/guide/usage/formatter/config-file-reference.html
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"printWidth": 120, // default (100) + indent buffer (5 x tabWidth)
+	"tabWidth": 4,
+	"useTabs": true, // Accessibility reasons: https://github.com/prettier/prettier/issues/7475
+	"semi": false,
+	"singleQuote": true,
+	"trailingComma": "all",
+	"ignorePatterns": [],
+	"endOfLine": "crlf",
+	"sortImports": {
+		"type": "alphabetical",
+		"order": "asc",
+		"fallbackSort": { "type": "line-length", "order": "asc" },
+		"partitionByNewLine": true
+	},
+	"sortTailwindcss": {
+		"stylesheet": "./src/app.css" // CSS file entry point for Tailwind CSS v4
+	},
+	"sortPackageJson": {
+		"enabled": true
+	},
+	"overrides": [
+		{
+			"files": ["*.json", "*.yaml"],
+			"options": {
+				"tabWidth": 2
+			}
+		}
+	]
+}
