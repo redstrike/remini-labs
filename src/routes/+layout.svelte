@@ -23,8 +23,7 @@
 	<AppSidebar />
 	<Sidebar.Inset>
 		<header
-			class="sticky top-0 z-10 flex w-full items-center gap-2 border-b bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60"
-		>
+			class="sticky top-0 z-10 flex w-full items-center gap-2 border-b bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
 			<Sidebar.Trigger />
 			{#if !isHome}
 				<div class="flex items-center gap-2">

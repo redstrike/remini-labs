@@ -28,12 +28,12 @@
 				<div class="mt-1 flex flex-wrap items-center gap-2 text-muted-foreground">
 					<p>Real-time local weather</p>
 					{#if weather.relativeTime}
-						<span class="rounded-full bg-muted px-2 py-0.5 text-xs">Last updated: {weather.relativeTime}</span>
+						<span class="rounded-full bg-muted px-2 py-0.5 text-xs"
+							>Last updated: {weather.relativeTime}</span>
 					{/if}
 					{#if weather.isApproxLocation && weather.displayWeather}
 						<span
-							class="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-xs text-amber-500"
-						>
+							class="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-xs text-amber-500">
 							<TriangleAlert class="h-3 w-3" />
 							Approximate location{weather.ipCity ? ` · ${weather.ipCity}` : ''}
 						</span>
@@ -48,11 +48,11 @@
 						class="gap-2 rounded-full px-4 shadow-sm transition-all hover:shadow-md"
 						onclick={() => weather.requestLocation(true)}
 						disabled={weather.loadingState !== 'idle'}
-						title="Refresh weather and location data"
-					>
+						title="Refresh weather and location data">
 						<RefreshCw
-							class="h-4 w-4 {weather.loadingState !== 'idle' ? 'animate-spin text-primary' : 'text-muted-foreground'}"
-						/>
+							class="h-4 w-4 {weather.loadingState !== 'idle'
+								? 'animate-spin text-primary'
+								: 'text-muted-foreground'}" />
 						<span class="font-medium">Refresh</span>
 					</Button>
 				{/if}
@@ -72,13 +72,16 @@
 			{#if weatherInfo.weather}
 				{@const currentCondition = getWeatherCondition(weatherInfo.weather.current.weather_code)}
 				{@const isDay = weatherInfo.weather.current.is_day === 1}
-				{@const animType = currentCondition.animationType === 'sun' && !isDay ? 'moon' : currentCondition.animationType}
+				{@const animType =
+					currentCondition.animationType === 'sun' && !isDay ? 'moon' : currentCondition.animationType}
 
 				<div class="grid gap-6 md:grid-cols-3">
 					<!-- Main Weather Card -->
 					<Card.Root class="relative overflow-hidden md:col-span-2">
 						<!-- Animated background icon -->
-						<div class="weather-bg-icon pointer-events-none absolute top-0 right-0 p-6 select-none" aria-hidden="true">
+						<div
+							class="weather-bg-icon pointer-events-none absolute top-0 right-0 p-6 select-none"
+							aria-hidden="true">
 							{#if animType === 'sun'}
 								{@const Icon = currentCondition.icon}
 								<Icon class="anim-sun h-44 w-44 text-amber-400" />
@@ -123,7 +126,8 @@
 									<p class="text-xl font-semibold tracking-tight">
 										{weather.ipCity}
 									</p>
-									<p class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs text-muted-foreground">
+									<p
+										class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs text-muted-foreground">
 										<span>Lat: {weatherInfo.lat.toFixed(4)}</span>
 										<span>Lng: {weatherInfo.lng.toFixed(4)}</span>
 										{#if weather.ipIsp}<span>· {weather.ipIsp}</span>{/if}
@@ -170,14 +174,16 @@
 									<Wind class="h-4 w-4" />
 									<span>Wind</span>
 								</div>
-								<span class="font-medium tabular-nums">{weatherInfo.weather.current.wind_speed_10m} km/h</span>
+								<span class="font-medium tabular-nums"
+									>{weatherInfo.weather.current.wind_speed_10m} km/h</span>
 							</div>
 							<div class="flex items-center justify-between">
 								<div class="flex items-center gap-2 text-muted-foreground">
 									<Droplets class="h-4 w-4" />
 									<span>Humidity</span>
 								</div>
-								<span class="font-medium tabular-nums">{weatherInfo.weather.current.relative_humidity_2m}%</span>
+								<span class="font-medium tabular-nums"
+									>{weatherInfo.weather.current.relative_humidity_2m}%</span>
 							</div>
 							<div class="flex items-center justify-between">
 								<div class="flex items-center gap-2 text-muted-foreground">
@@ -199,16 +205,17 @@
 								{#each weatherInfo.weather.daily.time as day, i (day)}
 									{@const fc = getWeatherCondition(weatherInfo.weather.daily.weather_code[i])}
 									{@const Icon = fc.icon}
-									<div class="flex flex-col items-center gap-2 rounded-lg border bg-muted/30 p-4 text-center">
+									<div
+										class="flex flex-col items-center gap-2 rounded-lg border bg-muted/30 p-4 text-center">
 										<span class="text-sm font-medium">
 											{new Date(day).toLocaleDateString(undefined, { weekday: 'short' })}
 										</span>
 										<Icon class="h-6 w-6 text-primary" />
 										<div class="flex flex-col text-sm tabular-nums">
-											<span class="font-bold">{Math.round(weatherInfo.weather.daily.temperature_2m_max[i])}°</span>
+											<span class="font-bold"
+												>{Math.round(weatherInfo.weather.daily.temperature_2m_max[i])}°</span>
 											<span class="text-muted-foreground"
-												>{Math.round(weatherInfo.weather.daily.temperature_2m_min[i])}°</span
-											>
+												>{Math.round(weatherInfo.weather.daily.temperature_2m_min[i])}°</span>
 										</div>
 									</div>
 								{/each}
@@ -255,8 +262,7 @@
 							class="mt-4"
 							size="lg"
 							onclick={() => weather.requestLocation(true)}
-							disabled={weather.loadingState !== 'idle'}
-						>
+							disabled={weather.loadingState !== 'idle'}>
 							{#if weather.loadingState !== 'idle'}
 								<LoaderCircle class="mr-2 h-5 w-5 animate-spin" />
 								Locating...
