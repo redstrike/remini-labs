@@ -1,7 +1,7 @@
 export const load = () => {
-    return {
-        meta: {
-            appName: 'Weather'
-        }
-    };
-};
+	return {
+		meta: {
+			appName: 'Weather',
+		},
+	}
+}
