@@ -1,0 +1,12 @@
+{
+  printWidth: 120, # Oxfmt's default (100) + indent buffer (5 x tabWidth)
+  tabWidth: 4,
+  useTabs: true, # Accessibility reasons: https://github.com/prettier/prettier/issues/7475
+  semi: false,
+  singleQuote: true,
+  trailingComma: 'all',
+  endOfLine: 'crlf',
+  plugins: ['prettier-plugin-svelte', 'prettier-plugin-tailwindcss'],
+  tailwindStylesheet: './src/app.css',
+  overrides: [{ files: '*.svelte', options: { parser: 'svelte', bracketSameLine: true } }],
+}
