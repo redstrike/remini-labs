@@ -7,15 +7,3 @@ bun.lockb
 
 # Miscellaneous
 /static/
-
-# ==========================================
-# ONLY FORMAT SVELTE FILES
-# ==========================================
-# 1. Ignore everything by default
-*
-
-# 2. Un-ignore directories so Prettier can traverse them
-!*/
-
-# 3. Un-ignore all Svelte files
-!**/*.svelte

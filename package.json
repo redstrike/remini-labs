@@ -12,8 +12,8 @@
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"test:e2e": "playwright test",
-		"fmt": "oxfmt && prettier --write .",
-		"fmt:check": "oxfmt --check && prettier --check ."
+		"fmt": "oxfmt && prettier --write \"**/*.svelte\"",
+		"fmt:check": "oxfmt --check && prettier --check \"**/*.svelte\""
 	},
 	"devDependencies": {
 		"@internationalized/date": "^3.11.0",
