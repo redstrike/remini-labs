@@ -1,35 +1,20 @@
 import type { RequestHandler } from '@sveltejs/kit'
 import { json, error } from '@sveltejs/kit'
 
+import { fetchServerReverseGeocode } from './../weather-service'
+
 // Server-side reverse geocoding proxy using Nominatim (OpenStreetMap).
 // Accepts ?lat=X&lng=Y, returns { city, country }.
 // Runs server-to-server to avoid CORS and comply with Nominatim's User-Agent policy.
-export const GET: RequestHandler = async ({ fetch, url }) => {
+export const GET: RequestHandler = async ({ url, fetch }) => {
 	const lat = url.searchParams.get('lat')
 	const lng = url.searchParams.get('lng')
 
-	if (!lat || !lng) {
-		error(400, 'lat and lng query params are required')
+	try {
+		const data = await fetchServerReverseGeocode(lat, lng, fetch)
+		return json(data)
+	} catch (e: any) {
+		const status = e.message.includes('required') ? 400 : 502
+		error(status, e.message)
 	}
-
-	const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
-		headers: {
-			// Nominatim usage policy requires a descriptive User-Agent
-			'User-Agent': 'MegaAppShell/1.0 (Weather Mini-App)',
-			Accept: 'application/json',
-		},
-	})
-
-	if (!res.ok) {
-		error(502, `Nominatim returned ${res.status}`)
-	}
-
-	const data = await res.json()
-	const address = data.address ?? {}
-
-	// Nominatim uses city > town > village > municipality depending on area type
-	const city: string = address.city ?? address.town ?? address.village ?? address.municipality ?? ''
-	const country: string = address.country ?? ''
-
-	return json({ city, country })
 }

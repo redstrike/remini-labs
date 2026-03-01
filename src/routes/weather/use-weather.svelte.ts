@@ -2,11 +2,13 @@ import { asyncStorage } from '$lib/utils/storage'
 import { Sun, Cloud, CloudRain, Snowflake } from '@lucide/svelte'
 import { onMount } from 'svelte'
 
+import { getIpLocationRemote, getReverseGeocodeRemote } from './weather.remote'
+
 const FRESHNESS_THRESHOLD = 30 * 60 * 1000 // 30 minutes in ms
 
 // --- Hook / State Module ---
 
-export function useWeather() {
+export function useWeather(useRemoteFns = false) {
 	let loadingState = $state<'idle' | 'locating' | 'fetching'>('locating')
 	let locationError = $state<string | null>(null)
 	let cachedWeather = $state<WeatherCacheItem | null>(null)
@@ -89,7 +91,7 @@ export function useWeather() {
 		loadingState = 'locating'
 		locationError = null
 		try {
-			const ipLocation = await fetchIpLocation()
+			const ipLocation = await fetchIpLocation(useRemoteFns)
 			isApproxLocation = true
 			ipCity = ipLocation.city
 			ipIsp = ipLocation.isp
@@ -105,10 +107,15 @@ export function useWeather() {
 	// Reverse geocode GPS coordinates in the background — sets gpsCity, never blocks weather load
 	async function reverseGeocode(lat: number, lng: number) {
 		try {
-			const res = await fetch(`/weather/api/reverse-geocode?lat=${lat}&lng=${lng}`)
-			if (!res.ok) return
-			const data = await res.json()
-			gpsCity = [data.city, data.country].filter(Boolean).join(', ')
+			if (useRemoteFns) {
+				const data = await getReverseGeocodeRemote({ lat, lng })
+				gpsCity = [data.city, data.country].filter(Boolean).join(', ')
+			} else {
+				const res = await fetch(`/weather/api/reverse-geocode?lat=${lat}&lng=${lng}`)
+				if (!res.ok) return
+				const data = await res.json()
+				gpsCity = [data.city, data.country].filter(Boolean).join(', ')
+			}
 		} catch {
 			// Silently ignore — city label is a bonus, not critical
 		}
@@ -230,12 +237,20 @@ export function getWeatherCondition(code: number) {
 	return { text: 'Unknown', icon: Cloud, animationType: 'cloud' as const }
 }
 
-// IP-based coarse location via local SvelteKit proxy (/api/ip-location).
-// The proxy fetches ip.me server-side to avoid CORS restrictions.
-async function fetchIpLocation(): Promise<{ lat: number; lng: number; city: string; isp: string }> {
-	const res = await fetch('/weather/api/ip-location')
-	if (!res.ok) throw new Error(`IP location proxy returned ${res.status}`)
-	const data = await res.json()
+// IP-based coarse location via local SvelteKit proxy (/api/ip-location) or remote function.
+// The proxy/remote function fetches ip.me server-side to avoid CORS restrictions.
+async function fetchIpLocation(
+	useRemoteFns: boolean,
+): Promise<{ lat: number; lng: number; city: string; isp: string }> {
+	let data
+	if (useRemoteFns) {
+		data = await getIpLocationRemote()
+	} else {
+		const res = await fetch('/weather/api/ip-location')
+		if (!res.ok) throw new Error(`IP location proxy returned ${res.status}`)
+		data = await res.json()
+	}
+
 	// Build "City, Country" label — omit whichever part is missing
 	const city: string = [data.city, data.country].filter(Boolean).join(', ')
 	return { lat: data.lat, lng: data.lng, city, isp: data.isp ?? '' }

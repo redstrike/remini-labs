@@ -1,13 +1,12 @@
 <script lang="ts">
 	import { useWeather, getWeatherCondition } from './use-weather.svelte'
 
-	// UI Components
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Card from '$lib/components/ui/card/index.js'
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js'
 	import { MapPin, LoaderCircle, Cloud, Wind, Droplets, RefreshCw, Globe, TriangleAlert, Moon } from '@lucide/svelte'
 
-	const weather = useWeather()
+	const weather = useWeather(true)
 </script>
 
 <svelte:head>
