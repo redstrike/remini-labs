@@ -3,7 +3,7 @@
 	"mcpServers": {
 		"svelte": {
 			"command": "pnpm",
-			"args": ["dlx", "@sveltejs/mcp"]
+			"args": ["svelte-mcp"]
 		}
 	}
 }
