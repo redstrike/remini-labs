@@ -59,7 +59,7 @@ export async function fetchServerReverseGeocode(
 	const res = await fetchFn(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
 		headers: {
 			// Nominatim usage policy requires a descriptive User-Agent
-			'User-Agent': 'MegaAppShell/1.0 (Weather Mini-App)',
+			'User-Agent': 'ReminiLabs/1.0 (Weather Agent)',
 			Accept: 'application/json',
 		},
 	})
