@@ -1,0 +1,14 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "remini-labs",
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"compatibility_date": "2026-03-02",
+	"compatibility_flags": ["nodejs_compat"],
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/output/server/_app/immutable/assets/",
+	},
+	"observability": {
+		"enabled": true,
+	},
+}

@@ -8,3 +8,9 @@ node_modules
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# local env files
+.dev.vars
+
+# Cloudflare Wrangler local state
+.wrangler/
