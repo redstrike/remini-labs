@@ -11,7 +11,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"preview:cf": "wrangler dev",
-		"deploy": "wrangler deploy",
+		"deploy:cf": "wrangler deploy",
 		"cf-typegen": "wrangler types",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"test:e2e": "playwright test",
