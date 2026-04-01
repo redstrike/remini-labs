@@ -14,3 +14,4 @@ vite.config.ts.timestamp-*
 
 # Cloudflare Wrangler local state
 .wrangler/
+.gstack/

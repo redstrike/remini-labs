@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CloudRain, Sparkles } from '@lucide/svelte'
+	import { CloudRain, Sparkles, TrendingUp } from '@lucide/svelte'
 </script>
 
 <main class="container mx-auto h-[100dvh] max-w-5xl p-4 pt-12 md:p-8">
@@ -11,6 +11,15 @@
 				<CloudRain class="h-8 w-8" strokeWidth={1.5} />
 			</div>
 			<span class="line-clamp-2 text-center text-xs leading-tight font-medium text-foreground/90">Weather</span>
+		</a>
+
+		<!-- Tickers App Icon -->
+		<a href="/tickers" class="group tap-highlight-transparent flex flex-col items-center gap-2">
+			<div
+				class="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-600 to-yellow-700 text-white shadow-sm transition-transform active:scale-90 sm:h-18 sm:w-18">
+				<TrendingUp class="h-8 w-8" strokeWidth={1.5} />
+			</div>
+			<span class="line-clamp-2 text-center text-xs leading-tight font-medium text-foreground/90">Tickers</span>
 		</a>
 
 		<!-- Placeholder for future apps -->

@@ -10,6 +10,9 @@
 
 	let isHome = $derived(page.url.pathname === '/')
 	let appName = $derived(page.data.meta?.appName)
+	// Read initial sidebar state from server cookie — intentionally one-time capture
+	const initialSidebarOpen = page.data.sidebarOpen ?? true
+	let sidebarOpen = $state(initialSidebarOpen)
 </script>
 
 <svelte:head>
@@ -19,7 +22,7 @@
 	<meta name="theme-color" content="#0D0E14" />
 </svelte:head>
 
-<Sidebar.Provider>
+<Sidebar.Provider bind:open={sidebarOpen}>
 	<AppSidebar />
 	<Sidebar.Inset>
 		<header

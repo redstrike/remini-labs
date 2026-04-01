@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
-	import { LayoutDashboard, CloudRain } from '@lucide/svelte'
+	import { LayoutDashboard, CloudRain, TrendingUp } from '@lucide/svelte'
 </script>
 
 <Sidebar.Root>
@@ -26,6 +26,16 @@
 								<a href="/weather" {...props}>
 									<CloudRain />
 									<span>Weather</span>
+								</a>
+							{/snippet}
+						</Sidebar.MenuButton>
+					</Sidebar.MenuItem>
+					<Sidebar.MenuItem>
+						<Sidebar.MenuButton>
+							{#snippet child({ props })}
+								<a href="/tickers" {...props}>
+									<TrendingUp />
+									<span>Tickers</span>
 								</a>
 							{/snippet}
 						</Sidebar.MenuButton>
