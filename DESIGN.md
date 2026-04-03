@@ -1,10 +1,11 @@
-# Design System — Tickers
+# Design System — Remini Labs
 
 ## Product Context
+- **Brand:** Remini Labs — experimental mini-apps by redstrike (Tung Nguyen)
 - **What this is:** Multi-asset price dashboard, starting with SJC gold and Phu Quy silver
 - **Who it's for:** Personal use, morning coffee price check
 - **Space/industry:** Vietnamese domestic precious metals pricing
-- **Project type:** Dark-themed, mobile-first dashboard (mini-app within remini-labs)
+- **Project type:** Dark-themed, mobile-first dashboard (mini-app within Remini Labs)
 
 ## Aesthetic Direction
 - **Direction:** Industrial/Utilitarian with a touch of Luxury
@@ -39,8 +40,10 @@
 - **Surface hover:** #22222e
 - **Border:** #2a2a36
 - **Primary text:** #e8e6e3 — warm off-white (not harsh #fff)
-- **Muted text:** #6b6b76 — labels, timestamps
-- **Dim text:** #4a4a56 — captions, placeholders
+- **Secondary text:** #8a8a96 — interactive labels (Buy/Sell, chips, tabs, unit, spread)
+- **Status text:** #9a9aa6 — header status bar timestamp
+- **Muted text:** #6b6b76 — chart labels (OHLC, Candle, Interval), refresh button icon
+- **Dim text:** #4a4a56 — reserved for lowest-priority elements
 - **Gold accent:** #c9a84c — muted gold, tied to XAU asset class
 - **Silver accent:** #8a94a8 — cool steel, tied to XAG asset class
 - **Semantic:**
@@ -63,6 +66,9 @@
 - **Card padding:** 20px
 - **Card gap:** 16px
 - **Container padding:** 24px vertical, 16px horizontal
+- **Chart section (mobile ≤639px):** Full viewport width (negative margins cancel container padding), 10px internal padding, no border-radius, no side borders
+- **Chart section header:** Two rows — Gold/Silver tabs (row 1, bg #1a1a24 with bottom border), Candle + Interval controls (row 2, bg #121218)
+- **Price scale nudge:** `position: relative; left: 5px` on `.tv-lightweight-charts td:nth-child(3)` to push price axis toward right edge
 - **Border radius:** sm:4px (chips, badges) md:6px (buttons) lg:12px (cards) full:9999px (dots)
 
 ## Motion
@@ -81,25 +87,34 @@
 - **Type:** Candlestick (OHLC), built from intraday sell price points grouped by day
 - **Colors:** Up candles #2d9f6f, down candles #c44e4e (wick colors match)
 - **Grid:** rgba(42, 42, 54, 0.3) both axes
-- **Crosshair:** rgba(255, 255, 255, 0.1), dashed (style 3), label bg #1a1a24
-- **OHLC bar:** Dynamic overlay — updates on crosshair hover, shows "Latest" tag when not hovering
-- **Period change:** First candle open vs last candle close, absolute + percentage
+- **Chart background:** #121218 — darker than card surface for contrast
+- **Crosshair:** rgba(255, 255, 255, 0.1), dashed (style 3), label bg #121218
+- **OHLC bar:** Dynamic overlay — updates on crosshair hover, shows "Latest" tag when not hovering. Values use compact M/K notation (e.g., 174.5M) with 1 decimal place.
+- **Period change:** First candle open vs last candle close, absolute (full number) + percentage
 - **Peak/bottom markers:** Custom ISeriesPrimitive — short horizontal line (12px) with price label
   - Color: rgba(255, 255, 255, 0.5) line, rgba(255, 255, 255, 0.6) text
   - Auto-flips left/right when label would overflow chart edge
-- **Durations:** 30D (API: 1M), 90D (API: 3M), 180D (API: 1Y filtered), 1Y (API: 1Y)
-- **Caching:** Client-side Map with 30-min TTL, keyed by `asset:apiDuration`
+- **Candle sizes:** 1D, 3D, 1W — grouped by bucket key (epoch days mod N)
+- **Durations:** 7D, 15D, 30D (API: 1M), 90D (API: 3M), 180D (API: 6M), 1Y (API: 1Y). Always fetches 1Y per asset; shorter durations are sliced client-side.
+- **Candle width scaling:** Explicit barSpacing, never fitContent(). Tier-based system with 6 tiers (7D→15D→30D→90D→180D→1Y), stepping down per interval:
+  - Mobile (standard=10px, step=1px): 12→11→10→9→8→7 (1D), 13→12→11→10→9→8 (3D), 14→13→12→11→10→9 (1W)
+  - Desktop (standard=17px, step=2px): 21→19→17→15→13→11 (1D), 23→21→19→17→15→13 (3D), 25→23→21→19→17→15 (1W)
+  - Candle size bonus: 1D=0, 3D=+1×step, 1W=+2×step
+  - Tier thresholds use 1D-equivalent candle count (numCandles × sizeFactor) to keep tier stable across candle sizes
+- **Caching:** Client-side Map with 30-min TTL, keyed by asset (always 1Y data)
 
 ## Data Architecture
 - **Source:** Phu Quy backend API (`be.phuquy.com.vn`), proxied via SvelteKit API routes
 - **Fetch:** `globalThis.fetch` (not `event.fetch` — Phu Quy blocks SvelteKit origin headers)
 - **Timeout:** 5s AbortController on all upstream calls
-- **Server cache:** Cloudflare Cache API (`caches.default`) with 60s TTL, stale-on-error fallback
+- **Server cache:** Cloudflare Cache API with X-Cached-At header for TTL enforcement (60s fresh, 300s stale fallback)
+- **Clock sync:** Transparent service (`src/lib/clock-sync.ts`) patches Date.now() and new Date() globally. Initial sync via SSR serverTime (10s drift threshold), re-sync every 15 min via /api/clock using NTP-lite (round-trip compensated).
 - **Client polling:** 15-min interval, guarded with `browser` check for SSR safety
 - **Gold prices:** Summary API provides native luong/chi prices (not chi×10 conversion)
 - **Silver prices:** API returns VND/chi; multiply by 266.667 for VND/kg (1kg = 266.667 chi)
 - **Silver filter:** Excludes BM1OZ and "miếng" (mỹ nghệ) items, sorts kg first then lượng
-- **Stale indicator:** Green dot = last fetch succeeded, amber dot = showing cached data after fetch failure
+- **Stale indicator:** Green dot = last fetch succeeded, amber dot = fetch failed (showing cached data). Status shows relative time ("Just now", "2 mins ago") with fallback to absolute date (en-GB format + UTC+7) after 24h. Tap to toggle between fetch time and source data time.
+- **Time format:** en-GB Intl.DateTimeFormat, fixed to Asia/Ho_Chi_Minh timezone, appended with UTC+7
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -116,3 +131,23 @@
 | 2026-04-01 | 860px max-width with responsive grid | Two-column card layout on tablet+, single column on mobile |
 | 2026-04-01 | Fetch-based stale detection over time-based | Simpler: green = fetch OK, amber = fetch failed showing cached data |
 | 2026-04-01 | 15-min polling interval | Phu Quy updates a few times per hour; 5-min was overkill for personal dashboard |
+| 2026-04-03 | Chart section full-bleed on mobile | Negative margins to cancel parent padding, recovers horizontal space for chart |
+| 2026-04-03 | Two-tone chart section: #1a1a24 tab row + #121218 body | Visual separation between asset tabs and chart content |
+| 2026-04-03 | 14D → 15D duration | Rounder number, feels more natural |
+| 2026-04-03 | Always-1Y fetch + client-side slicing for all durations | One fetch per asset, instant duration switching |
+| 2026-04-03 | Explicit barSpacing over fitContent() | fitContent overrides barSpacing, making candle widths unpredictable across candle sizes |
+| 2026-04-03 | Tier-based candle width with additive size bonus | Linear 1px/2px steps feel predictable; multiplicative scaling caused jarring width jumps |
+| 2026-04-03 | OHLC compact M/K notation | Saves horizontal space, faster to parse at a glance |
+| 2026-04-03 | autoSize: true for chart container | Lets lightweight-charts manage its own ResizeObserver, fixing price scale alignment |
+| 2026-04-03 | X-Cached-At header for cache TTL | Cloudflare Cache API ignores Cache-Control for cache.match(); manual TTL check needed |
+| 2026-04-03 | Transparent clock sync via Date.now() patch | Dumb-proof DX: developers use Date.now() normally, clock sync is invisible |
+| 2026-04-03 | 10s drift threshold for initial sync | Absorbs slow 4G network latency without false-triggering server fallback |
+| 2026-04-03 | NTP-lite for background re-sync | Round-trip compensated for ~50ms accuracy, runs every 15 min via /api/clock |
+| 2026-04-03 | 60-minute stale threshold | Phu Quy updates irregularly; 30 min caused false amber during normal upstream gaps |
+| 2026-04-03 | en-GB locale for date formatting | vi-VN outputs time-first; en-GB gives dd/mm/yyyy date-first as expected |
+| 2026-04-03 | Relative time with absolute fallback | "2 mins ago" for fresh data, full date after 24h for stale |
+| 2026-04-03 | Tap-to-toggle for source time | Desktop has title tooltip; mobile needs tap since no hover exists |
+| 2026-04-03 | Bumped text colors: #4a4a56→#6b6b76, #6b6b76→#8a8a96 | Improved readability on dark backgrounds without losing visual hierarchy |
+| 2026-04-03 | Rebrand to "Remini Labs" | Umbrella brand for all mini-apps, consistent in titles, sidebar, meta |
+| 2026-04-03 | Sidebar brand in Header slot + breadcrumb nav | Brand at top of sidebar, header shows "Remini Labs › Tickers" on all screens |
+| 2026-04-03 | Home links collapse sidebar when on home | Avoids unnecessary navigation; improves mobile UX |

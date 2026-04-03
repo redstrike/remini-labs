@@ -26,6 +26,7 @@ export function useTickers(initialData: TickersData) {
 				])
 				if (tableRes.ok) {
 					priceTable = await tableRes.json()
+					lastFetchedAt = Date.now()
 				}
 				if (summaryRes.ok) {
 					priceSummary = await summaryRes.json()
@@ -79,15 +80,45 @@ export function useTickers(initialData: TickersData) {
 
 	const selectedSilver = $derived(silverItems[selectedSilverIdx] ?? silverItems[0] ?? null)
 
-	// Stale = last fetch failed and we're showing cached data.
-	// If a fresh fetch succeeded, data is as fresh as possible — always green.
+	// Stale = fetch failed, showing cached data. Green = last fetch succeeded.
 	let fetchFailed = $state(false)
 	const isStale = $derived(() => fetchFailed && !!priceTable)
 
-	const updatedAtFormatted = $derived(() => {
+	const dateFmt = new Intl.DateTimeFormat('en-GB', {
+		day: '2-digit', month: '2-digit', year: 'numeric',
+		hour: '2-digit', minute: '2-digit', hour12: false,
+		timeZone: 'Asia/Ho_Chi_Minh',
+	})
+
+	function fmtDateVN(date: Date): string {
+		return dateFmt.format(date) + ' UTC+7'
+	}
+
+	let lastFetchedAt = $state(Date.now())
+	let now = $state(Date.now())
+
+	$effect(() => {
+		if (!browser) return
+		const timer = setInterval(() => { now = Date.now() }, 30_000)
+		return () => clearInterval(timer)
+	})
+
+	const lastFetchedTimeFormatted = $derived(() => {
+		const diffMs = now - lastFetchedAt
+		const diffMins = Math.floor(diffMs / 60_000)
+		if (diffMins < 1) return 'Just now'
+		if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`
+		const diffHours = Math.floor(diffMins / 60)
+		if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+		// Fallback to absolute timestamp after 24h
+		const d = new Date(lastFetchedAt)
+		return fmtDateVN(d)
+	})
+
+	const dataUpdatedAtFormatted = $derived(() => {
 		if (!priceTable?.updatedAt) return ''
-		const date = new Date(priceTable.updatedAt)
-		return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+		const d = new Date(priceTable.updatedAt)
+		return `Source: ${fmtDateVN(d)}`
 	})
 
 	// Force refresh all data: clears chart cache, re-fetches prices + current chart
@@ -102,7 +133,10 @@ export function useTickers(initialData: TickersData) {
 				fetch('/tickers/api/table'),
 				fetch('/tickers/api/prices'),
 			])
-			if (tableRes.ok) priceTable = await tableRes.json()
+			if (tableRes.ok) {
+				priceTable = await tableRes.json()
+				lastFetchedAt = Date.now()
+			}
 			if (summaryRes.ok) priceSummary = await summaryRes.json()
 			if (!tableRes.ok && !summaryRes.ok) throw new Error('Both APIs failed')
 			fetchFailed = false
@@ -125,35 +159,31 @@ export function useTickers(initialData: TickersData) {
 
 	// Chart data with TTL cache for all durations
 	type ChartAsset = 'gold' | 'silver'
-	type ChartDuration = '1M' | '3M' | '6M' | '1Y'
+	type ChartDuration = '7D' | '15D' | '1M' | '3M' | '6M' | '1Y'
 	let chartAsset = $state<ChartAsset>('gold')
 	let chartDuration = $state<ChartDuration>('1M')
 	let chartData = $state<ChartData | null>(null)
 	let chartLoading = $state(false)
 	let chartError = $state<string | null>(null)
 
-	// TTL cache for all chart data. Gold/silver prices update a few times per hour,
-	// and historical candles are immutable. 30 min TTL is plenty.
+	// Always fetch 1Y per asset — all shorter durations are sliced client-side.
+	// One cache entry per asset; switching timeframes is instant after first load.
 	interface CacheEntry { data: ChartData; fetchedAt: number }
 	const chartCache = new Map<string, CacheEntry>()
 	const CHART_TTL = 30 * 60 * 1000 // 30 min
 
-	function cacheKey(asset: ChartAsset, apiDuration: string) {
-		return `${asset}:${apiDuration}`
-	}
-
-	function getCached(asset: ChartAsset, apiDuration: string): ChartData | null {
-		const entry = chartCache.get(cacheKey(asset, apiDuration))
+	function getCached(asset: ChartAsset): ChartData | null {
+		const entry = chartCache.get(asset)
 		if (!entry) return null
 		if (Date.now() - entry.fetchedAt > CHART_TTL) {
-			chartCache.delete(cacheKey(asset, apiDuration))
+			chartCache.delete(asset)
 			return null
 		}
 		return entry.data
 	}
 
-	function setCache(asset: ChartAsset, apiDuration: string, data: ChartData) {
-		chartCache.set(cacheKey(asset, apiDuration), { data, fetchedAt: Date.now() })
+	function setCache(asset: ChartAsset, data: ChartData) {
+		chartCache.set(asset, { data, fetchedAt: Date.now() })
 	}
 
 	// Load default chart (gold 30D) on mount — client only
@@ -164,12 +194,12 @@ export function useTickers(initialData: TickersData) {
 		}
 	})
 
-	function filterTo180Days(fullYear: ChartData): ChartData {
+	function filterToNDays(data: ChartData, days: number): ChartData {
 		const cutoff = new Date()
-		cutoff.setDate(cutoff.getDate() - 180)
+		cutoff.setDate(cutoff.getDate() - days)
 		const cutoffStr = cutoff.toISOString()
-		const filtered = fullYear.points.filter((p) => p.timestamp >= cutoffStr)
-		let changeRate = fullYear.changeRate
+		const filtered = data.points.filter((p) => p.timestamp >= cutoffStr)
+		let changeRate = data.changeRate
 		if (filtered.length >= 2) {
 			const first = filtered[0].sellPrice
 			const last = filtered[filtered.length - 1].sellPrice
@@ -178,18 +208,24 @@ export function useTickers(initialData: TickersData) {
 		return { changeRate, points: filtered }
 	}
 
+	const DURATION_DAYS: Record<ChartDuration, number | null> = {
+		'7D': 7, '15D': 15, '1M': 30, '3M': 90, '6M': 180, '1Y': null,
+	}
+
+	function sliceToWindow(data: ChartData, duration: ChartDuration): ChartData {
+		const days = DURATION_DAYS[duration]
+		return days !== null ? filterToNDays(data, days) : data
+	}
+
 	async function fetchChart(asset: ChartAsset, duration: ChartDuration, bypassCache = false) {
 		chartAsset = asset
 		chartDuration = duration
 
-		// 180D uses 1Y data (Phu Quy's 6M endpoint is broken)
-		const apiDuration = (duration === '6M') ? '1Y' : duration
-
-		// Check cache (skip if force refresh)
+		// Check cache — always keyed by asset only (1Y data)
 		if (!bypassCache) {
-			const cached = getCached(asset, apiDuration)
+			const cached = getCached(asset)
 			if (cached) {
-				chartData = duration === '6M' ? filterTo180Days(cached) : cached
+				chartData = sliceToWindow(cached, duration)
 				return
 			}
 		}
@@ -201,13 +237,13 @@ export function useTickers(initialData: TickersData) {
 			const type = asset === 'gold' ? 1 : 2
 			const unit = asset === 'silver' ? 'kg' : 'chi'
 			const res = await fetch(
-				`/tickers/api/chart?categoryId=${categoryId}&type=${type}&duration=${apiDuration}&unit=${unit}`,
+				`/tickers/api/chart?categoryId=${categoryId}&type=${type}&duration=1Y&unit=${unit}`,
 			)
 			if (!res.ok) throw new Error(`API returned ${res.status}`)
 			const data: ChartData = await res.json()
 
-			setCache(asset, apiDuration, data)
-			chartData = duration === '6M' ? filterTo180Days(data) : data
+			setCache(asset, data)
+			chartData = sliceToWindow(data, duration)
 		} catch (e) {
 			chartError = 'Unable to load chart data'
 			console.error('Chart fetch error:', e)
@@ -241,8 +277,11 @@ export function useTickers(initialData: TickersData) {
 		get isStale() {
 			return isStale()
 		},
-		get updatedAt() {
-			return updatedAtFormatted()
+		get lastFetchedTime() {
+			return lastFetchedTimeFormatted()
+		},
+		get dataUpdatedAt() {
+			return dataUpdatedAtFormatted()
 		},
 		get chartAsset() {
 			return chartAsset

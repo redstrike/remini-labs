@@ -35,6 +35,7 @@ export interface PriceTable {
 	gold: PriceTableItem[]
 	silver: PriceTableItem[]
 	updatedAt: string
+	serverTime: string // ISO 8601 — server clock at response time
 }
 
 export interface IntradayPoint {
@@ -158,6 +159,7 @@ export async function fetchPriceTable(): Promise<PriceTable> {
 		gold: items.filter((i) => i.type === 1),
 		silver: items.filter((i) => i.type === 2),
 		updatedAt,
+		serverTime: new Date().toISOString(),
 	}
 }
 

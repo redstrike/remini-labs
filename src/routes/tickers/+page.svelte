@@ -2,7 +2,7 @@
 	import { useTickers, formatVND, formatSpread } from './use-tickers.svelte'
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js'
 	import { RefreshCw, TriangleAlert } from '@lucide/svelte'
-	import PriceChart from './price-chart.svelte'
+	import PriceChart, { type CandleSize } from './price-chart.svelte'
 	import { page } from '$app/state'
 
 	// Intentionally capture SSR data once — hook takes over with client-side polling
@@ -11,15 +11,24 @@
 	const tickers = useTickers({ table: initialTable, summary: initialSummary })
 
 	const durations = [
+		{ label: '7D', value: '7D' as const },
+		{ label: '15D', value: '15D' as const },
 		{ label: '30D', value: '1M' as const },
 		{ label: '90D', value: '3M' as const },
 		{ label: '180D', value: '6M' as const },
 		{ label: '1Y', value: '1Y' as const },
 	]
+
+	const candleSizes: { label: string; value: CandleSize }[] = [
+		{ label: '1D', value: '1D' },
+		{ label: '3D', value: '3D' },
+		{ label: '1W', value: '1W' },
+	]
+	let candleSize = $state<CandleSize>('1D')
+	let showPriceTime = $state(false)
 </script>
 
 <svelte:head>
-	<title>Tickers</title>
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
 	<link
@@ -39,17 +48,27 @@
 				{:else}
 					<span class="tickers-dot" class:stale={tickers.isStale}></span>
 				{/if}
-				<span class="tickers-status-text">
-					{#if tickers.refreshing}
-						Refreshing...
-					{:else if tickers.loading}
-						Loading...
-					{:else if tickers.updatedAt}
-						{tickers.updatedAt}
-					{:else}
-						Live
-					{/if}
-				</span>
+				{#if showPriceTime && tickers.dataUpdatedAt}
+					<button class="tickers-status-text tickers-status-toggle" title={tickers.lastFetchedTime} onclick={() => showPriceTime = false}>
+						{tickers.dataUpdatedAt}
+					</button>
+				{:else}
+					<button
+						class="tickers-status-text tickers-status-toggle"
+						title={tickers.dataUpdatedAt}
+						onclick={() => showPriceTime = true}
+					>
+						{#if tickers.refreshing}
+							Refreshing...
+						{:else if tickers.loading}
+							Loading...
+						{:else if tickers.lastFetchedTime}
+							{tickers.lastFetchedTime}
+						{:else}
+							Live
+						{/if}
+					</button>
+				{/if}
 			</div>
 			<button
 				class="tickers-refresh-btn"
@@ -192,16 +211,35 @@
 						Silver
 					</button>
 				</div>
-				<div class="tickers-chart-durations">
-					{#each durations as d}
-						<button
-							class="tickers-duration-chip"
-							class:active={tickers.chartDuration === d.value && tickers.chartData}
-							onclick={() => tickers.fetchChart(tickers.chartAsset, d.value)}
-						>
-							{d.label}
-						</button>
-					{/each}
+				<div class="tickers-chart-sub-controls">
+					<div class="tickers-candle-sizes">
+						<span class="tickers-candle-label">Candle</span>
+						<div class="tickers-candle-chips">
+							{#each candleSizes as s}
+								<button
+									class="tickers-candle-chip"
+									class:active={candleSize === s.value}
+									onclick={() => candleSize = s.value}
+								>
+									{s.label}
+								</button>
+							{/each}
+						</div>
+					</div>
+					<div class="tickers-chart-intervals">
+						<span class="tickers-interval-label">Interval</span>
+						<div class="tickers-chart-durations">
+							{#each durations as d}
+								<button
+									class="tickers-duration-chip"
+									class:active={tickers.chartDuration === d.value && tickers.chartData}
+									onclick={() => tickers.fetchChart(tickers.chartAsset, d.value)}
+								>
+									{d.label}
+								</button>
+							{/each}
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -219,6 +257,7 @@
 					<PriceChart
 						data={tickers.chartData}
 						accentColor={tickers.chartAsset === 'gold' ? '#c9a84c' : '#8a94a8'}
+						{candleSize}
 					/>
 				{:else}
 					<div class="tickers-chart-placeholder">
@@ -263,7 +302,15 @@
 		align-items: center;
 		gap: 6px;
 		font-size: 11px;
-		color: #6b6b76;
+		color: #9a9aa6;
+	}
+	.tickers-status-toggle {
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
 	}
 	.tickers-refresh-btn {
 		display: flex;
@@ -360,7 +407,7 @@
 		padding: 4px 10px;
 		border-radius: 4px;
 		border: 1px solid #2a2a36;
-		color: #6b6b76;
+		color: #8a8a96;
 		background: transparent;
 		cursor: pointer;
 		transition: all 0.12s ease;
@@ -394,7 +441,7 @@
 	.tickers-price-label {
 		font-size: 11px;
 		font-weight: 500;
-		color: #6b6b76;
+		color: #8a8a96;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 		min-width: 40px;
@@ -419,7 +466,7 @@
 	}
 	.tickers-price-unit {
 		font-size: 10px;
-		color: #6b6b76;
+		color: #8a8a96;
 	}
 
 	/* Spread */
@@ -434,7 +481,7 @@
 	}
 	.tickers-spread-label {
 		font-size: 10px;
-		color: #6b6b76;
+		color: #8a8a96;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
@@ -448,22 +495,113 @@
 
 	/* Chart section */
 	.tickers-chart-section {
-		background: #1a1a24;
+		background: #121218;
 		border: 1px solid #2a2a36;
 		border-radius: 12px;
 		padding: 20px;
 	}
+	@media (max-width: 639px) {
+		.tickers-chart-section {
+			margin-left: -16px;
+			margin-right: -16px;
+			border-radius: 0;
+			border-left: none;
+			border-right: none;
+			padding: 10px;
+		}
+	}
+	.tickers-chart-section :global(.tv-lightweight-charts td:nth-child(3)) {
+		position: relative !important;
+		left: 5px !important;
+	}
 	.tickers-chart-header {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		margin-bottom: 16px;
+		gap: 10px;
+	}
+	.tickers-chart-sub-controls {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 16px;
 		flex-wrap: wrap;
-		gap: 12px;
+		gap: 8px;
+	}
+	.tickers-chart-intervals {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.tickers-interval-label {
+		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
+		font-size: 10px;
+		font-weight: 500;
+		color: #6b6b76;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		white-space: nowrap;
 	}
 	.tickers-chart-tabs {
 		display: flex;
 		gap: 4px;
+		background: #1a1a24;
+		margin: -20px -20px 0;
+		padding: 16px 20px 12px;
+		border-radius: 12px 12px 0 0;
+		border-bottom: 1px solid #2a2a36;
+	}
+	@media (max-width: 639px) {
+		.tickers-chart-tabs {
+			margin: -10px -10px 0;
+			padding: 12px 10px 10px;
+			border-radius: 0;
+		}
+	}
+	.tickers-candle-sizes {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.tickers-candle-label {
+		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
+		font-size: 10px;
+		font-weight: 500;
+		color: #6b6b76;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		white-space: nowrap;
+	}
+	.tickers-candle-chips {
+		display: flex;
+		border: 1px solid #2a2a36;
+		border-radius: 4px;
+		overflow: hidden;
+	}
+	.tickers-candle-chip {
+		font-family: 'Geist Mono', 'GeistMono', monospace;
+		font-size: 10px;
+		font-weight: 500;
+		padding: 5px 9px;
+		border: none;
+		border-right: 1px solid #2a2a36;
+		border-radius: 0;
+		color: #8a8a96;
+		background: transparent;
+		cursor: pointer;
+		transition: all 0.12s ease;
+	}
+	.tickers-candle-chip:last-child {
+		border-right: none;
+	}
+	.tickers-candle-chip:hover {
+		background: rgba(255, 255, 255, 0.03);
+		color: #e8e6e3;
+	}
+	.tickers-candle-chip.active {
+		background: rgba(232, 230, 227, 0.08);
+		color: #e8e6e3;
+		font-weight: 600;
 	}
 	.tickers-chart-tab {
 		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
@@ -472,7 +610,7 @@
 		padding: 6px 14px;
 		border-radius: 4px;
 		border: 1px solid #2a2a36;
-		color: #6b6b76;
+		color: #8a8a96;
 		background: transparent;
 		cursor: pointer;
 		transition: all 0.12s ease;
@@ -494,27 +632,34 @@
 	}
 	.tickers-chart-durations {
 		display: flex;
-		gap: 4px;
+		border: 1px solid #2a2a36;
+		border-radius: 4px;
+		overflow: hidden;
 	}
 	.tickers-duration-chip {
 		font-family: 'Geist Mono', 'GeistMono', monospace;
 		font-size: 10px;
 		font-weight: 500;
-		padding: 4px 10px;
-		border-radius: 4px;
-		border: 1px solid #2a2a36;
-		color: #6b6b76;
+		padding: 5px 9px;
+		border: none;
+		border-right: 1px solid #2a2a36;
+		border-radius: 0;
+		color: #8a8a96;
 		background: transparent;
 		cursor: pointer;
 		transition: all 0.12s ease;
+		white-space: nowrap;
+	}
+	.tickers-duration-chip:last-child {
+		border-right: none;
 	}
 	.tickers-duration-chip:hover {
-		border-color: #6b6b76;
+		background: rgba(255, 255, 255, 0.03);
+		color: #e8e6e3;
 	}
 	.tickers-duration-chip.active {
 		background: rgba(232, 230, 227, 0.08);
 		color: #e8e6e3;
-		border-color: rgba(232, 230, 227, 0.2);
 		font-weight: 600;
 	}
 

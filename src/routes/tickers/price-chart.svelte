@@ -1,3 +1,7 @@
+<script module lang="ts">
+	export type CandleSize = '1D' | '3D' | '1W'
+</script>
+
 <script lang="ts">
 	import { onMount } from 'svelte'
 	import type { ChartData } from './api/phuquy-client'
@@ -5,13 +9,16 @@
 	let {
 		data,
 		accentColor = '#c9a84c',
+		candleSize = '1D',
 	}: {
 		data: ChartData
 		accentColor?: string
+		candleSize?: CandleSize
 	} = $props()
 
 	let containerEl: HTMLDivElement
 	let chart: any = null
+	let chartReady = $state(false)
 	let candleSeries: any = null
 	let extremePrimitive: any = null
 	let candlesMap = new Map<string, OHLCCandle>()
@@ -26,17 +33,25 @@
 		close: number
 	}
 
-	function buildCandles(points: ChartData['points']): OHLCCandle[] {
-		const byDay = new Map<string, number[]>()
+	function getBucketKey(timestamp: string, size: CandleSize): string {
+		if (size === '1D') return timestamp.split('T')[0]
+		const n = size === '1W' ? 7 : 3
+		const epochDays = Math.floor(Date.parse(timestamp) / 86400000)
+		const bucketStart = Math.floor(epochDays / n) * n
+		return new Date(bucketStart * 86400000).toISOString().split('T')[0]
+	}
+
+	function buildCandles(points: ChartData['points'], size: CandleSize): OHLCCandle[] {
+		const byBucket = new Map<string, number[]>()
 		for (const p of points) {
-			const day = p.timestamp.split('T')[0]
-			if (!byDay.has(day)) byDay.set(day, [])
-			byDay.get(day)!.push(p.sellPrice)
+			const key = getBucketKey(p.timestamp, size)
+			if (!byBucket.has(key)) byBucket.set(key, [])
+			byBucket.get(key)!.push(p.sellPrice)
 		}
 		const candles: OHLCCandle[] = []
-		for (const [day, sells] of byDay) {
+		for (const [time, sells] of byBucket) {
 			candles.push({
-				time: day,
+				time,
 				open: sells[0],
 				close: sells[sells.length - 1],
 				high: Math.max(...sells),
@@ -56,16 +71,37 @@
 		}
 	}
 
-	let allCandles = $derived(buildCandles(data.points))
+	let allCandles = $derived(buildCandles(data.points, candleSize))
 	let summary = $derived(periodStats(allCandles))
 	let display = $derived(hoverCandle ?? (allCandles.length ? allCandles[allCandles.length - 1] : null))
 	let isUp = $derived(display ? display.close >= display.open : true)
 
 	const fmt = (v: number) => new Intl.NumberFormat('vi-VN').format(v)
+	const fmtM = (v: number) => {
+		if (v >= 1_000_000 || v <= -1_000_000) {
+			const m = v / 1_000_000
+			return `${Number.isInteger(m) ? m : m.toFixed(1)}M`
+		}
+		if (v >= 1_000 || v <= -1_000) {
+			const k = v / 1_000
+			return `${Number.isInteger(k) ? k : k.toFixed(1)}K`
+		}
+		return fmt(v)
+	}
+	const fmtAxis = (v: number) => {
+		if (v >= 1_000_000) {
+			const m = v / 1_000_000
+			return Number.isInteger(m) ? `${m}M` : `${m.toFixed(1)}M`
+		}
+		return fmt(v)
+	}
 
 	onMount(() => {
+		let ro: ResizeObserver | null = null
+
 		import('lightweight-charts').then(({ createChart, CandlestickSeries, CrosshairMode }) => {
 			chart = createChart(containerEl, {
+				autoSize: true,
 				layout: {
 					background: { color: 'transparent' },
 					textColor: '#6b6b76',
@@ -86,10 +122,9 @@
 				},
 				crosshair: {
 					mode: CrosshairMode.Normal,
-					vertLine: { color: 'rgba(255, 255, 255, 0.1)', width: 1, style: 3, labelBackgroundColor: '#1a1a24' },
-					horzLine: { color: 'rgba(255, 255, 255, 0.1)', width: 1, style: 3, labelBackgroundColor: '#1a1a24' },
+					vertLine: { color: 'rgba(255, 255, 255, 0.1)', width: 1, style: 3, labelBackgroundColor: '#121218' },
+					horzLine: { color: 'rgba(255, 255, 255, 0.1)', width: 1, style: 3, labelBackgroundColor: '#121218' },
 				},
-				autoSize: true,
 			})
 
 			candleSeries = chart.addSeries(CandlestickSeries, {
@@ -99,7 +134,7 @@
 				borderDownColor: '#c44e4e',
 				wickUpColor: '#2d9f6f',
 				wickDownColor: '#c44e4e',
-				priceFormat: { type: 'custom', formatter: (v: number) => fmt(v) },
+				priceFormat: { type: 'custom', formatter: (v: number) => fmtAxis(v) },
 			})
 
 			chart.subscribeCrosshairMove((param: any) => {
@@ -113,15 +148,24 @@
 				hoverCandle = candlesMap.get(key) ?? null
 			})
 
+			chartReady = true
 			updateData(data)
+
+			ro = new ResizeObserver(() => {
+				applyTimeScale(candlesMap.size)
+			})
+			ro.observe(containerEl)
 		})
 
-		return () => { chart?.remove() }
+		return () => {
+			chart?.remove()
+			ro?.disconnect()
+		}
 	})
 
 	function updateData(d: ChartData) {
 		if (!candleSeries) return
-		const candles = buildCandles(d.points)
+		const candles = buildCandles(d.points, candleSize)
 
 		candlesMap.clear()
 		for (const c of candles) candlesMap.set(c.time, c)
@@ -229,11 +273,43 @@
 			candleSeries.attachPrimitive(extremePrimitive)
 		}
 
-		chart?.timeScale().fitContent()
+		applyTimeScale(candlesMap.size)
+	}
+
+	// Candle width steps down 1px (mobile) per interval tier.
+	// Mobile: 11 → 10 → 9 → 8 → 7 → 6 (7D → 15D → 30D → 90D → 180D → 1Y)
+	// Desktop scales proportionally with the same 6 tiers.
+	const REFERENCE_CANDLES = 30
+
+	function applyTimeScale(numCandles: number) {
+		if (!chart) return
+		const isMobile = containerEl.clientWidth < 640
+		const standardSpacing = isMobile ? 10 : 17
+		const step = isMobile ? 1 : 2
+
+		// Tier based on 1D-equivalent count (interval-driven)
+		const sizeFactor = candleSize === '1W' ? 7 : candleSize === '3D' ? 3 : 1
+		const equiv1D = numCandles * sizeFactor
+
+		let tier = 0
+		if (equiv1D > 200) tier = 3
+		else if (equiv1D > 100) tier = 2
+		else if (equiv1D > REFERENCE_CANDLES) tier = 1
+		else if (equiv1D <= 10) tier = -2
+		else if (equiv1D <= 20) tier = -1
+
+		const baseSpacing = standardSpacing - step * tier
+		const sizeBonus = candleSize === '1W' ? step * 2 : candleSize === '3D' ? step : 0
+		const barSpacing = Math.max(5, baseSpacing + sizeBonus)
+
+		chart.timeScale().applyOptions({ barSpacing })
+		chart.timeScale().scrollToRealTime()
 	}
 
 	$effect(() => {
-		if (data && chart) updateData(data)
+		// Read candleSize so Svelte tracks it as a dependency
+		const _size = candleSize
+		if (data && chartReady) updateData(data)
 	})
 </script>
 
@@ -251,12 +327,12 @@
 	{#if display}
 		{@const change = display.close - display.open}
 		{@const changePct = display.open ? ((change / display.open) * 100) : 0}
-		<span class="ohlc-item"><span class="ohlc-label">O</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmt(display.open)}</span></span>
-		<span class="ohlc-item"><span class="ohlc-label">H</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmt(display.high)}</span></span>
-		<span class="ohlc-item"><span class="ohlc-label">L</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmt(display.low)}</span></span>
-		<span class="ohlc-item"><span class="ohlc-label">C</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmt(display.close)}</span></span>
+		<span class="ohlc-item"><span class="ohlc-label">O</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmtM(display.open)}</span></span>
+		<span class="ohlc-item"><span class="ohlc-label">H</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmtM(display.high)}</span></span>
+		<span class="ohlc-item"><span class="ohlc-label">L</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmtM(display.low)}</span></span>
+		<span class="ohlc-item"><span class="ohlc-label">C</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmtM(display.close)}</span></span>
 		<span class="ohlc-change" class:up={change >= 0} class:down={change < 0}>
-			{change >= 0 ? '+' : ''}{fmt(change)} ({changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%)
+			{change >= 0 ? '+' : ''}{fmtM(change)} ({changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%)
 		</span>
 		{#if !hoverCandle}<span class="ohlc-period-tag">Latest</span>{/if}
 	{/if}
@@ -283,7 +359,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.ohlc-item { display: inline-flex; align-items: center; gap: 3px; }
-	.ohlc-label { font-size: 10px; font-weight: 500; color: #4a4a56; }
+	.ohlc-label { font-size: 10px; font-weight: 500; color: #6b6b76; }
 	.ohlc-val { font-size: 11px; font-weight: 600; color: #e8e6e3; }
 	.ohlc-val.up { color: #2d9f6f; }
 	.ohlc-val.down { color: #c44e4e; }
@@ -291,7 +367,7 @@
 	.ohlc-change.up { color: #2d9f6f; }
 	.ohlc-change.down { color: #c44e4e; }
 	.ohlc-period-tag {
-		font-size: 9px; font-weight: 500; color: #4a4a56;
+		font-size: 9px; font-weight: 500; color: #6b6b76;
 		padding: 1px 5px; border: 1px solid #2a2a36; border-radius: 3px;
 	}
 </style>
