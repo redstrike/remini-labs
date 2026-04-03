@@ -2,10 +2,10 @@
 
 ## Product Context
 - **Brand:** Remini Labs — experimental mini-apps by redstrike (Tung Nguyen)
-- **What this is:** Multi-asset price dashboard, starting with SJC gold and Phu Quy silver
-- **Who it's for:** Personal use, morning coffee price check
-- **Space/industry:** Vietnamese domestic precious metals pricing
-- **Project type:** Dark-themed, mobile-first dashboard (mini-app within Remini Labs)
+- **What this is:** Collection of personal everyday tools as mini-apps
+- **Who it's for:** Personal use, everyday tools
+- **Project type:** Dark-themed, mobile-first, each mini-app is its own "room" with distinct atmosphere
+- **Mini-apps:** Tickers (gold/silver prices), Weather (local weather with atmospheric UI)
 
 ## Aesthetic Direction
 - **Direction:** Industrial/Utilitarian with a touch of Luxury
@@ -70,6 +70,41 @@
 - **Chart section header:** Two rows — Gold/Silver tabs (row 1, bg #1a1a24 with bottom border), Candle + Interval controls (row 2, bg #121218)
 - **Price scale nudge:** `position: relative; left: 5px` on `.tv-lightweight-charts td:nth-child(3)` to push price axis toward right edge
 - **Border radius:** sm:4px (chips, badges) md:6px (buttons) lg:12px (cards) full:9999px (dots)
+
+## App Shell / Branding
+- **Brand name:** Remini Labs
+- **Page title:** `{AppName} — Remini Labs` (e.g., "Tickers — Remini Labs")
+- **Meta description:** Includes AI tools used (Claude Code, Antigravity), mini-app names
+- **Sidebar header:** Favicon (20px) + "Remini Labs" (text-sm, font-semibold, tracking-tight), links to home
+- **Sidebar footer:** `Crafted with ❤️ ☕ and 🤖 by redstrike` (13px mobile / 12px desktop, whitespace-nowrap)
+- **Header breadcrumb:** `Remini Labs › {AppName}` on all screens, brand links to home
+- **Home link behavior:** When already on home, clicking brand/home collapses sidebar instead of navigating
+- **Mini-app rooms:** Each mini-app has its own background/atmosphere, distinct from the default app bg (#0f0f14)
+
+## Weather App
+- **Room background:** Deep blue-gray gradient (`#0d1117` → `#111827` → `#0f172a`), min-height fills viewport
+- **Atmospheric gradients:** Condition-aware backgrounds on the weather content area:
+  - Clear day: `#2980b9` → `#6dd5fa` → `#f9d423` (warm sky)
+  - Clear day hot (>35°C): `#f46b45` → `#eea849` → `#f9d423` (intense warm)
+  - Clear night: `#0f0c29` → `#1a1a4e` → `#24243e` (deep navy)
+  - Cloudy day: `#636e7b` → `#8e9eab` → `#a8b5c2` (muted gray-blue)
+  - Cloudy night: `#1c1f26` → `#2c3e50` → `#3a4a5c` (dark slate)
+  - Rain day: `#4b6584` → `#5f7fa2` → `#7f8fa6` (steel blue)
+  - Rain night: `#141e30` → `#1e3044` → `#2c3e50` (dark blue-gray)
+  - Snow day: `#83a4d4` → `#b6cde8` → `#d4e4f1` (cool white-blue)
+  - Snow night: `#1a2a3a` → `#2a3f54` → `#3a5068` (dark blue)
+  - Storm day: `#373b44` → `#4a4e69` → `#5c5f7a` (dark purple)
+  - Storm night: `#0d0b1a` → `#1a1440` → `#2d1b69` (deep violet)
+- **Atmospheric CSS effects (zero images):**
+  - Sun glow: radial amber gradient, drifting, pulsing (clear day + hot)
+  - Rain streaks: 20 angled lines falling across full container (rain + storm)
+  - Fog/mist: soft white gradient rising from bottom (cloudy + rain)
+  - Snow particles: 15 dots drifting down with lateral movement
+  - Temperature glow: radial blur behind temp number — amber (warm), blue (cold), gray (neutral)
+- **Card treatment:** Frosted glass — `bg-black/20 backdrop-blur-sm` (main card), `bg-white/5 backdrop-blur-sm border-white/10` (details, forecast)
+- **Text on gradients:** White with opacity levels — city name (white), condition (white/90), feels like (white/60), coords (white/50)
+- **Animated icons:** Opacity bumped to 0.2-0.3 (from 0.12-0.18) for visibility on gradients
+- **Data source:** Open-Meteo API (free, no key, unlimited)
 
 ## Motion
 - **Approach:** Minimal-functional — only transitions that aid comprehension
@@ -140,8 +175,8 @@
 | 2026-04-03 | OHLC compact M/K notation | Saves horizontal space, faster to parse at a glance |
 | 2026-04-03 | autoSize: true for chart container | Lets lightweight-charts manage its own ResizeObserver, fixing price scale alignment |
 | 2026-04-03 | X-Cached-At header for cache TTL | Cloudflare Cache API ignores Cache-Control for cache.match(); manual TTL check needed |
-| 2026-04-03 | Transparent clock sync via Date.now() patch | Dumb-proof DX: developers use Date.now() normally, clock sync is invisible |
-| 2026-04-03 | 10s drift threshold for initial sync | Absorbs slow 4G network latency without false-triggering server fallback |
+| 2026-04-03 | Transparent clock sync via Date.now() patch | Zero-effort DX: developers use Date.now() normally, clock sync is invisible |
+| 2026-04-03 | 10s drift threshold for initial sync | Absorbs slow mobile network latency without false-triggering server fallback |
 | 2026-04-03 | NTP-lite for background re-sync | Round-trip compensated for ~50ms accuracy, runs every 15 min via /api/clock |
 | 2026-04-03 | 60-minute stale threshold | Phu Quy updates irregularly; 30 min caused false amber during normal upstream gaps |
 | 2026-04-03 | en-GB locale for date formatting | vi-VN outputs time-first; en-GB gives dd/mm/yyyy date-first as expected |
@@ -151,3 +186,9 @@
 | 2026-04-03 | Rebrand to "Remini Labs" | Umbrella brand for all mini-apps, consistent in titles, sidebar, meta |
 | 2026-04-03 | Sidebar brand in Header slot + breadcrumb nav | Brand at top of sidebar, header shows "Remini Labs › Tickers" on all screens |
 | 2026-04-03 | Home links collapse sidebar when on home | Avoids unnecessary navigation; improves mobile UX |
+| 2026-04-03 | Each mini-app is its own "room" | Distinct atmosphere per app; navigating feels like entering a new space |
+| 2026-04-03 | Weather atmospheric gradients over static images | CSS gradients age better, zero bundle cost, no maintenance |
+| 2026-04-03 | CSS particle effects (rain, snow, fog, glow) over images | Same atmospheric feel, zero asset loading, easy to tune |
+| 2026-04-03 | Frosted glass cards on weather gradients | Cards float above atmosphere; data stays readable on any gradient |
+| 2026-04-03 | Weather room deep blue-gray bg | Distinct from default app bg (#0f0f14); hints at sky before data loads |
+| 2026-04-03 | Open-Meteo over alternatives | Free, no API key, unlimited calls, accurate ECMWF/GFS models |

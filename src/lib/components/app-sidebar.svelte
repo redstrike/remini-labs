@@ -1,19 +1,32 @@
 <script lang="ts">
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import { LayoutDashboard, CloudRain, TrendingUp } from '@lucide/svelte'
+
+	let { isHome = false, closeSidebar = () => {} }: { isHome?: boolean; closeSidebar?: () => void } = $props()
+
+	function handleHomeClick(e: MouseEvent) {
+		if (isHome) {
+			e.preventDefault()
+			closeSidebar()
+		}
+	}
 </script>
 
 <Sidebar.Root>
-	<Sidebar.Header></Sidebar.Header>
+	<Sidebar.Header>
+		<a href="/" class="flex items-center gap-2.5 px-2 py-3" onclick={handleHomeClick}>
+			<img src="/favicon.png" alt="" width="20" height="20" />
+			<span class="text-sm font-semibold tracking-tight">Remini Labs</span>
+		</a>
+	</Sidebar.Header>
 	<Sidebar.Content>
 		<Sidebar.Group>
-			<Sidebar.GroupLabel>Mini Apps</Sidebar.GroupLabel>
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton>
 							{#snippet child({ props })}
-								<a href="/" {...props}>
+								<a href="/" {...props} onclick={handleHomeClick}>
 									<LayoutDashboard />
 									<span>Home</span>
 								</a>
@@ -45,6 +58,6 @@
 		</Sidebar.Group>
 	</Sidebar.Content>
 	<Sidebar.Footer>
-		<div class="p-4 text-center text-xs text-muted-foreground">Vibe Coding Mode</div>
+		<div class="p-4 text-center text-[13px] md:text-[12px] text-muted-foreground whitespace-nowrap">Crafted with ❤️ ☕ and 🤖 by redstrike</div>
 	</Sidebar.Footer>
 </Sidebar.Root>
