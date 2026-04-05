@@ -1,14 +1,16 @@
 import { json } from '@sveltejs/kit'
-import type { RequestHandler } from './$types'
-import { fetchPriceSummary } from '../phuquy-client'
 
-const CACHE_KEY = 'https://remini-labs.internal/tickers/api/prices'
+import { fetchPriceTable } from '../../phuquy-client'
+import type { RequestHandler } from './$types'
+
+const CACHE_KEY = 'https://remini-labs.internal/tickers/api/spots/metals'
 const CACHE_TTL = 60
 const STALE_TTL = 300
 
-export const GET: RequestHandler = async ({ platform }) => {
+export const GET: RequestHandler = async () => {
 	const cache = typeof caches !== 'undefined' ? await caches.open('tickers') : null
 
+	// Check cache — only use if within TTL (stored in X-Cached-At header)
 	if (cache) {
 		const cached = await cache.match(CACHE_KEY)
 		if (cached) {
@@ -18,8 +20,8 @@ export const GET: RequestHandler = async ({ platform }) => {
 	}
 
 	try {
-		const summary = await fetchPriceSummary()
-		const response = json(summary, {
+		const table = await fetchPriceTable()
+		const response = json(table, {
 			headers: {
 				'Cache-Control': `private, max-age=${CACHE_TTL}`,
 				'X-Cached-At': String(Date.now()),
@@ -32,6 +34,7 @@ export const GET: RequestHandler = async ({ platform }) => {
 
 		return response
 	} catch (e) {
+		// On upstream error, serve stale cache (up to STALE_TTL)
 		if (cache) {
 			const stale = await cache.match(CACHE_KEY)
 			if (stale) {
@@ -40,7 +43,7 @@ export const GET: RequestHandler = async ({ platform }) => {
 			}
 		}
 
-		console.error('Phu Quy prices API error:', e)
+		console.error('Phu Quy table API error:', e)
 		return json({ error: 'Unable to fetch prices' }, { status: 502 })
 	}
 }

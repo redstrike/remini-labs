@@ -4,18 +4,27 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte'
-	import type { ChartData } from './api/phuquy-client'
+	import type { ChartData, OHLCCandle } from './api/phuquy-client'
+
+	export interface PriceFormatConfig {
+		format: (v: number) => string
+		formatCompact: (v: number) => string
+		formatAxis: (v: number) => string
+	}
 
 	let {
 		data,
 		accentColor = '#c9a84c',
 		candleSize = '1D',
+		priceFormatter,
 	}: {
 		data: ChartData
 		accentColor?: string
 		candleSize?: CandleSize
+		priceFormatter?: PriceFormatConfig
 	} = $props()
 
+	// eslint-disable-next-line no-unassigned-vars -- assigned by bind:this in template
 	let containerEl: HTMLDivElement
 	let chart: any = null
 	let chartReady = $state(false)
@@ -24,14 +33,6 @@
 	let candlesMap = new Map<string, OHLCCandle>()
 
 	let hoverCandle = $state<OHLCCandle | null>(null)
-
-	interface OHLCCandle {
-		time: string
-		open: number
-		high: number
-		low: number
-		close: number
-	}
 
 	function getBucketKey(timestamp: string, size: CandleSize): string {
 		if (size === '1D') return timestamp.split('T')[0]
@@ -61,6 +62,27 @@
 		return candles.sort((a, b) => a.time.localeCompare(b.time))
 	}
 
+	function mergeCandles(candles: OHLCCandle[], size: CandleSize): OHLCCandle[] {
+		if (size === '1D') return candles
+		const byBucket = new Map<string, OHLCCandle[]>()
+		for (const c of candles) {
+			const key = getBucketKey(c.time + 'T00:00:00Z', size)
+			if (!byBucket.has(key)) byBucket.set(key, [])
+			byBucket.get(key)!.push(c)
+		}
+		const merged: OHLCCandle[] = []
+		for (const [time, group] of byBucket) {
+			merged.push({
+				time,
+				open: group[0].open,
+				close: group[group.length - 1].close,
+				high: Math.max(...group.map((c) => c.high)),
+				low: Math.min(...group.map((c) => c.low)),
+			})
+		}
+		return merged.sort((a, b) => a.time.localeCompare(b.time))
+	}
+
 	function periodStats(candles: OHLCCandle[]) {
 		if (!candles.length) return null
 		return {
@@ -71,13 +93,15 @@
 		}
 	}
 
-	let allCandles = $derived(buildCandles(data.points, candleSize))
+	let allCandles = $derived(
+		data.candles?.length ? mergeCandles(data.candles, candleSize) : buildCandles(data.points, candleSize),
+	)
 	let summary = $derived(periodStats(allCandles))
 	let display = $derived(hoverCandle ?? (allCandles.length ? allCandles[allCandles.length - 1] : null))
 	let isUp = $derived(display ? display.close >= display.open : true)
 
-	const fmt = (v: number) => new Intl.NumberFormat('vi-VN').format(v)
-	const fmtM = (v: number) => {
+	const defaultFmt = (v: number) => new Intl.NumberFormat('vi-VN').format(v)
+	const defaultFmtM = (v: number) => {
 		if (v >= 1_000_000 || v <= -1_000_000) {
 			const m = v / 1_000_000
 			return `${Number.isInteger(m) ? m : m.toFixed(1)}M`
@@ -86,15 +110,19 @@
 			const k = v / 1_000
 			return `${Number.isInteger(k) ? k : k.toFixed(1)}K`
 		}
-		return fmt(v)
+		return defaultFmt(v)
 	}
-	const fmtAxis = (v: number) => {
+	const defaultFmtAxis = (v: number) => {
 		if (v >= 1_000_000) {
 			const m = v / 1_000_000
 			return Number.isInteger(m) ? `${m}M` : `${m.toFixed(1)}M`
 		}
-		return fmt(v)
+		return defaultFmt(v)
 	}
+
+	const fmt = $derived(priceFormatter?.format ?? defaultFmt)
+	const fmtM = $derived(priceFormatter?.formatCompact ?? defaultFmtM)
+	const fmtAxis = $derived(priceFormatter?.formatAxis ?? defaultFmtAxis)
 
 	onMount(() => {
 		let ro: ResizeObserver | null = null
@@ -122,8 +150,18 @@
 				},
 				crosshair: {
 					mode: CrosshairMode.Normal,
-					vertLine: { color: 'rgba(255, 255, 255, 0.1)', width: 1, style: 3, labelBackgroundColor: '#121218' },
-					horzLine: { color: 'rgba(255, 255, 255, 0.1)', width: 1, style: 3, labelBackgroundColor: '#121218' },
+					vertLine: {
+						color: 'rgba(255, 255, 255, 0.1)',
+						width: 1,
+						style: 3,
+						labelBackgroundColor: '#121218',
+					},
+					horzLine: {
+						color: 'rgba(255, 255, 255, 0.1)',
+						width: 1,
+						style: 3,
+						labelBackgroundColor: '#121218',
+					},
 				},
 			})
 
@@ -142,9 +180,10 @@
 					hoverCandle = null
 					return
 				}
-				const key = typeof param.time === 'string'
-					? param.time
-					: `${param.time.year}-${String(param.time.month).padStart(2, '0')}-${String(param.time.day).padStart(2, '0')}`
+				const key =
+					typeof param.time === 'string'
+						? param.time
+						: `${param.time.year}-${String(param.time.month).padStart(2, '0')}-${String(param.time.day).padStart(2, '0')}`
 				hoverCandle = candlesMap.get(key) ?? null
 			})
 
@@ -165,7 +204,7 @@
 
 	function updateData(d: ChartData) {
 		if (!candleSeries) return
-		const candles = buildCandles(d.points, candleSize)
+		const candles = d.candles?.length ? mergeCandles(d.candles, candleSize) : buildCandles(d.points, candleSize)
 
 		candlesMap.clear()
 		for (const c of candles) candlesMap.set(c.time, c)
@@ -197,77 +236,97 @@
 			extremePrimitive = {
 				updateAllViews() {},
 				paneViews() {
-					return [{
-						zOrder() { return 'top' },
-						renderer() {
-							return {
-								draw(target: any) {
-									target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio, verticalPixelRatio }: any) => {
-										const ts = _chart.timeScale()
-										const lineW = Math.round(12 * horizontalPixelRatio)
-										const gap = Math.round(2 * horizontalPixelRatio)
-										const fontSize = Math.round(9 * verticalPixelRatio)
-										context.font = `${fontSize}px "Geist Mono", monospace`
+					return [
+						{
+							zOrder() {
+								return 'top'
+							},
+							renderer() {
+								return {
+									draw(target: any) {
+										target.useBitmapCoordinateSpace(
+											({
+												context,
+												bitmapSize,
+												horizontalPixelRatio,
+												verticalPixelRatio,
+											}: any) => {
+												const ts = _chart.timeScale()
+												const lineW = Math.round(12 * horizontalPixelRatio)
+												const gap = Math.round(2 * horizontalPixelRatio)
+												const fontSize = Math.round(9 * verticalPixelRatio)
+												context.font = `${fontSize}px "Geist Mono", monospace`
 
-										// Draw a marker: auto-flips to left when label would overflow right edge
-										function drawMarker(x: number, y: number, label: string) {
-											const textW = context.measureText(label).width
-											const totalRight = x + lineW + gap + textW
-											// Flip to left if marker+label would go past the price scale area
-											const chartRight = bitmapSize.width - Math.round(60 * horizontalPixelRatio)
-											const goLeft = totalRight > chartRight
+												// Draw a marker: auto-flips to left when label would overflow right edge
+												function drawMarker(x: number, y: number, label: string) {
+													const textW = context.measureText(label).width
+													const totalRight = x + lineW + gap + textW
+													// Flip to left if marker+label would go past the price scale area
+													const chartRight =
+														bitmapSize.width - Math.round(60 * horizontalPixelRatio)
+													const goLeft = totalRight > chartRight
 
-											context.strokeStyle = 'rgba(255, 255, 255, 0.5)'
-											context.lineWidth = Math.max(1, horizontalPixelRatio)
-											context.beginPath()
-											if (goLeft) {
-												context.moveTo(x, y)
-												context.lineTo(x - lineW, y)
-											} else {
-												context.moveTo(x, y)
-												context.lineTo(x + lineW, y)
-											}
-											context.stroke()
+													context.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+													context.lineWidth = Math.max(1, horizontalPixelRatio)
+													context.beginPath()
+													if (goLeft) {
+														context.moveTo(x, y)
+														context.lineTo(x - lineW, y)
+													} else {
+														context.moveTo(x, y)
+														context.lineTo(x + lineW, y)
+													}
+													context.stroke()
 
-											context.fillStyle = 'rgba(255, 255, 255, 0.6)'
-											if (goLeft) {
-												context.textAlign = 'right'
-												context.fillText(label, x - lineW - gap, y + Math.round(3 * verticalPixelRatio))
-											} else {
-												context.textAlign = 'left'
-												context.fillText(label, x + lineW + gap, y + Math.round(3 * verticalPixelRatio))
-											}
-										}
+													context.fillStyle = 'rgba(255, 255, 255, 0.6)'
+													if (goLeft) {
+														context.textAlign = 'right'
+														context.fillText(
+															label,
+															x - lineW - gap,
+															y + Math.round(3 * verticalPixelRatio),
+														)
+													} else {
+														context.textAlign = 'left'
+														context.fillText(
+															label,
+															x + lineW + gap,
+															y + Math.round(3 * verticalPixelRatio),
+														)
+													}
+												}
 
-										// Peak
-										const peakX = ts.timeToCoordinate(_peak.time)
-										const peakY = _series.priceToCoordinate(_peak.high)
-										if (peakX !== null && peakY !== null) {
-											drawMarker(
-												Math.round(peakX * horizontalPixelRatio),
-												Math.round(peakY * verticalPixelRatio),
-												_fmt(_peak.high),
-											)
-										}
+												// Peak
+												const peakX = ts.timeToCoordinate(_peak.time)
+												const peakY = _series.priceToCoordinate(_peak.high)
+												if (peakX !== null && peakY !== null) {
+													drawMarker(
+														Math.round(peakX * horizontalPixelRatio),
+														Math.round(peakY * verticalPixelRatio),
+														_fmt(_peak.high),
+													)
+												}
 
-										// Bottom
-										if (_bottom.time !== _peak.time) {
-											const bottomX = ts.timeToCoordinate(_bottom.time)
-											const bottomY = _series.priceToCoordinate(_bottom.low)
-											if (bottomX !== null && bottomY !== null) {
-												drawMarker(
-													Math.round(bottomX * horizontalPixelRatio),
-													Math.round(bottomY * verticalPixelRatio),
-													_fmt(_bottom.low),
-												)
-											}
-										}
-									})
+												// Bottom
+												if (_bottom.time !== _peak.time) {
+													const bottomX = ts.timeToCoordinate(_bottom.time)
+													const bottomY = _series.priceToCoordinate(_bottom.low)
+													if (bottomX !== null && bottomY !== null) {
+														drawMarker(
+															Math.round(bottomX * horizontalPixelRatio),
+															Math.round(bottomY * verticalPixelRatio),
+															_fmt(_bottom.low),
+														)
+													}
+												}
+											},
+										)
+									},
 								}
-							}
-						}
-					}]
-				}
+							},
+						},
+					]
+				},
 			}
 
 			candleSeries.attachPrimitive(extremePrimitive)
@@ -307,7 +366,8 @@
 	}
 
 	$effect(() => {
-		// Read candleSize so Svelte tracks it as a dependency
+		// Track candleSize + data so Svelte re-runs when either changes.
+		// priceFormatter is handled by the fmtAxis closure — no applyOptions needed.
 		const _size = candleSize
 		if (data && chartReady) updateData(data)
 	})
@@ -315,7 +375,7 @@
 
 {#if summary}
 	{@const periodAbs = summary.close - summary.open}
-	{@const periodPct = summary.open ? ((periodAbs / summary.open) * 100) : 0}
+	{@const periodPct = summary.open ? (periodAbs / summary.open) * 100 : 0}
 	{@const periodUp = periodAbs >= 0}
 	<div class="period-change" class:up={periodUp} class:down={!periodUp}>
 		<span class="period-change-value">{periodUp ? '+' : ''}{fmt(periodAbs)}</span>
@@ -326,48 +386,99 @@
 <div class="ohlc-bar">
 	{#if display}
 		{@const change = display.close - display.open}
-		{@const changePct = display.open ? ((change / display.open) * 100) : 0}
-		<span class="ohlc-item"><span class="ohlc-label">O</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmtM(display.open)}</span></span>
-		<span class="ohlc-item"><span class="ohlc-label">H</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmtM(display.high)}</span></span>
-		<span class="ohlc-item"><span class="ohlc-label">L</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmtM(display.low)}</span></span>
-		<span class="ohlc-item"><span class="ohlc-label">C</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}>{fmtM(display.close)}</span></span>
+		{@const changePct = display.open ? (change / display.open) * 100 : 0}
+		<span class="ohlc-item"
+			><span class="ohlc-label">O</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}
+				>{fmtM(display.open)}</span
+			></span>
+		<span class="ohlc-item"
+			><span class="ohlc-label">H</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}
+				>{fmtM(display.high)}</span
+			></span>
+		<span class="ohlc-item"
+			><span class="ohlc-label">L</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}
+				>{fmtM(display.low)}</span
+			></span>
+		<span class="ohlc-item"
+			><span class="ohlc-label">C</span><span class="ohlc-val" class:up={isUp} class:down={!isUp}
+				>{fmtM(display.close)}</span
+			></span>
 		<span class="ohlc-change" class:up={change >= 0} class:down={change < 0}>
 			{change >= 0 ? '+' : ''}{fmtM(change)} ({changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%)
 		</span>
-		{#if !hoverCandle}<span class="ohlc-period-tag">Latest</span>{/if}
 	{/if}
 </div>
 
 <div class="chart-container" bind:this={containerEl}></div>
 
 <style>
-	.chart-container { width: 100%; height: 340px; }
+	.chart-container {
+		width: 100%;
+		height: 340px;
+	}
 	.period-change {
-		display: flex; align-items: baseline; gap: 8px;
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
 		padding: 4px 2px 2px;
 		font-family: 'Geist Mono', 'GeistMono', monospace;
 		font-variant-numeric: tabular-nums;
 	}
-	.period-change-value { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
-	.period-change-pct { font-size: 13px; font-weight: 600; }
-	.period-change.up { color: #2d9f6f; }
-	.period-change.down { color: #c44e4e; }
+	.period-change-value {
+		font-size: 18px;
+		font-weight: 700;
+		letter-spacing: -0.5px;
+	}
+	.period-change-pct {
+		font-size: 13px;
+		font-weight: 600;
+	}
+	.period-change.up {
+		color: #2d9f6f;
+	}
+	.period-change.down {
+		color: #c44e4e;
+	}
 	.ohlc-bar {
-		display: flex; align-items: center; gap: 10px;
-		padding: 6px 2px; flex-wrap: wrap; min-height: 28px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 6px 2px;
+		flex-wrap: wrap;
+		min-height: 28px;
 		font-family: 'Geist Mono', 'GeistMono', monospace;
 		font-variant-numeric: tabular-nums;
 	}
-	.ohlc-item { display: inline-flex; align-items: center; gap: 3px; }
-	.ohlc-label { font-size: 10px; font-weight: 500; color: #6b6b76; }
-	.ohlc-val { font-size: 11px; font-weight: 600; color: #e8e6e3; }
-	.ohlc-val.up { color: #2d9f6f; }
-	.ohlc-val.down { color: #c44e4e; }
-	.ohlc-change { font-size: 11px; font-weight: 600; margin-left: 2px; }
-	.ohlc-change.up { color: #2d9f6f; }
-	.ohlc-change.down { color: #c44e4e; }
-	.ohlc-period-tag {
-		font-size: 9px; font-weight: 500; color: #6b6b76;
-		padding: 1px 5px; border: 1px solid #2a2a36; border-radius: 3px;
+	.ohlc-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+	}
+	.ohlc-label {
+		font-size: 10px;
+		font-weight: 500;
+		color: #6b6b76;
+	}
+	.ohlc-val {
+		font-size: 11px;
+		font-weight: 600;
+		color: #e8e6e3;
+	}
+	.ohlc-val.up {
+		color: #2d9f6f;
+	}
+	.ohlc-val.down {
+		color: #c44e4e;
+	}
+	.ohlc-change {
+		font-size: 11px;
+		font-weight: 600;
+		margin-left: 2px;
+	}
+	.ohlc-change.up {
+		color: #2d9f6f;
+	}
+	.ohlc-change.down {
+		color: #c44e4e;
 	}
 </style>

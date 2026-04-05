@@ -50,9 +50,18 @@ export interface ChartPoint {
 	sellPrice: number
 }
 
+export interface OHLCCandle {
+	time: string // 'YYYY-MM-DD'
+	open: number
+	high: number
+	low: number
+	close: number
+}
+
 export interface ChartData {
 	changeRate: number
-	points: ChartPoint[]
+	points: ChartPoint[] // metals: raw intraday points
+	candles?: OHLCCandle[] // crypto: pre-built daily OHLC
 }
 
 // --- Upstream API response types (raw from Phu Quy) ---
@@ -118,16 +127,19 @@ function withTimeout(url: string, init?: RequestInit): Promise<Response> {
 	const controller = new AbortController()
 	const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
-	return globalThis.fetch(url, {
-		...init,
-		signal: controller.signal,
-		headers: { ...HEADERS, ...init?.headers },
-	}).finally(() => clearTimeout(timeout))
+	return globalThis
+		.fetch(url, {
+			...init,
+			signal: controller.signal,
+			headers: { ...HEADERS, ...init?.headers },
+		})
+		.finally(() => clearTimeout(timeout))
 }
 
-function defaultUnit(type: number, unitOfMeasure: string | null): string {
-	if (unitOfMeasure) return unitOfMeasure
-	return type === 1 ? 'VND/chi' : 'VND/luong'
+function normalizeUnit(type: number, unitOfMeasure: string | null): string {
+	if (!unitOfMeasure) return type === 1 ? 'VND/chi' : 'VND/luong'
+	// Phu Quy API sometimes returns "Vnđ" instead of "VND"
+	return unitOfMeasure.replace(/Vnđ/gi, 'VND')
 }
 
 // --- Public API ---
@@ -146,7 +158,7 @@ export async function fetchPriceTable(): Promise<PriceTable> {
 			buyPrice: item.priceIn,
 			sellPrice: item.priceOut,
 			type: item.type as 1 | 2,
-			unit: defaultUnit(item.type, item.unitOfMeasure),
+			unit: normalizeUnit(item.type, item.unitOfMeasure),
 			buyDirection: item.priceInIncrease,
 			sellDirection: item.priceOutIncrease,
 			updatedAt: item.lastUpdate,
@@ -169,6 +181,7 @@ export async function fetchPriceSummary(): Promise<PriceSummary[]> {
 
 	const json: PhuQuyResponse<PhuQuySummaryItem[]> = await res.json()
 	if (json.errorCode !== '0') throw new Error(`Phu Quy API error: ${json.message}`)
+	if (!json.data) throw new Error('Phu Quy API returned no data')
 
 	return json.data.map(
 		(item): PriceSummary => ({

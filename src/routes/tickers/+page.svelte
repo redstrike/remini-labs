@@ -1,14 +1,34 @@
 <script lang="ts">
-	import { useTickers, formatVND, formatSpread } from './use-tickers.svelte'
+	import { useTickers, formatVND, formatSpread, formatUSDT, USDT_FORMATTER } from './use-tickers.svelte'
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js'
-	import { RefreshCw, TriangleAlert } from '@lucide/svelte'
+	import { LoadingOverlay } from '$lib/components/ui/loading-overlay/index.js'
+	import { FreshnessDot } from '$lib/components/ui/freshness-dot/index.js'
+	import { RefreshCw as SpinnerIcon, TriangleAlert } from '@lucide/svelte'
 	import PriceChart, { type CandleSize } from './price-chart.svelte'
 	import { page } from '$app/state'
 
 	// Intentionally capture SSR data once — hook takes over with client-side polling
 	const initialTable = page.data.table ?? null
-	const initialSummary = page.data.summary ?? null
-	const tickers = useTickers({ table: initialTable, summary: initialSummary })
+	const initialCrypto = page.data.crypto ?? null
+	const tickers = useTickers({ table: initialTable, crypto: initialCrypto })
+
+	// Spinner duration tuned to avg API latency — one full rotation ≈ one fetch
+	const METALS_SPIN_MS = 500 // Phu Quy avg ~400ms
+	const CRYPTO_SPIN_MS = 200 // Binance avg ~120ms
+
+	const CRYPTO = [
+		{ id: 'BTC' as const, name: 'Bitcoin', accent: '#e8993a' },
+		{ id: 'ETH' as const, name: 'Ethereum', accent: '#6b7fcc' },
+		{ id: 'SOL' as const, name: 'Solana', accent: '#8a6db8' },
+	]
+
+	const CHART_ACCENTS: Record<string, string> = {
+		gold: '#d4a03a',
+		silver: '#a0a8b8',
+		BTC: '#e8993a',
+		ETH: '#6b7fcc',
+		SOL: '#8a6db8',
+	}
 
 	const durations = [
 		{ label: '7D', value: '7D' as const },
@@ -25,7 +45,25 @@
 		{ label: '1W', value: '1W' },
 	]
 	let candleSize = $state<CandleSize>('1D')
-	let showPriceTime = $state(false)
+	let metalTab = $state<'gold' | 'silver'>('gold')
+	let cryptoTab = $state<'BTC' | 'ETH' | 'SOL'>('BTC')
+
+	// UI reacts to fetch events — spinner state owned by the page, not the data layer
+	let fetchingMetals = $state(false)
+	let fetchingCrypto = $state(false)
+
+	$effect(() => {
+		const unsub1 = tickers.bus.on('metals:fetching', () => (fetchingMetals = true))
+		const unsub2 = tickers.bus.on('metals:fetched', () => (fetchingMetals = false))
+		const unsub3 = tickers.bus.on('crypto:fetching', () => (fetchingCrypto = true))
+		const unsub4 = tickers.bus.on('crypto:fetched', () => (fetchingCrypto = false))
+		return () => {
+			unsub1()
+			unsub2()
+			unsub3()
+			unsub4()
+		}
+	})
 </script>
 
 <svelte:head>
@@ -33,52 +71,13 @@
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
 	<link
 		rel="stylesheet"
-		href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;600;700&display=swap"
-	/>
+		href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;600;700&display=swap" />
 </svelte:head>
 
 <div class="tickers">
 	<!-- Header -->
 	<div class="tickers-header">
 		<h1 class="tickers-title">Tickers</h1>
-		<div class="tickers-header-right">
-			<div class="tickers-status">
-				{#if tickers.loading || tickers.refreshing}
-					<RefreshCw class="tickers-spinner" size={14} />
-				{:else}
-					<span class="tickers-dot" class:stale={tickers.isStale}></span>
-				{/if}
-				{#if showPriceTime && tickers.dataUpdatedAt}
-					<button class="tickers-status-text tickers-status-toggle" title={tickers.lastFetchedTime} onclick={() => showPriceTime = false}>
-						{tickers.dataUpdatedAt}
-					</button>
-				{:else}
-					<button
-						class="tickers-status-text tickers-status-toggle"
-						title={tickers.dataUpdatedAt}
-						onclick={() => showPriceTime = true}
-					>
-						{#if tickers.refreshing}
-							Refreshing...
-						{:else if tickers.loading}
-							Loading...
-						{:else if tickers.lastFetchedTime}
-							{tickers.lastFetchedTime}
-						{:else}
-							Live
-						{/if}
-					</button>
-				{/if}
-			</div>
-			<button
-				class="tickers-refresh-btn"
-				onclick={() => tickers.forceRefreshAll()}
-				disabled={tickers.refreshing || tickers.loading}
-				title="Refresh all data"
-			>
-				<RefreshCw size={13} class={tickers.refreshing ? 'tickers-spinner' : ''} />
-			</button>
-		</div>
 	</div>
 
 	{#if tickers.error && !tickers.priceTable}
@@ -90,103 +89,166 @@
 	{:else if !tickers.priceTable}
 		<div class="tickers-cards">
 			<div class="tickers-card">
-				<Skeleton class="h-4 w-24 mb-4" />
-				<Skeleton class="h-8 w-48 mb-2" />
+				<Skeleton class="mb-4 h-4 w-24" />
+				<Skeleton class="mb-2 h-8 w-48" />
 				<Skeleton class="h-8 w-48" />
 			</div>
 			<div class="tickers-card">
-				<Skeleton class="h-4 w-24 mb-4" />
-				<Skeleton class="h-8 w-48 mb-2" />
+				<Skeleton class="mb-4 h-4 w-24" />
+				<Skeleton class="mb-2 h-8 w-48" />
 				<Skeleton class="h-8 w-48" />
 			</div>
 		</div>
 	{:else}
 		<!-- Price Cards: side-by-side on tablet+ -->
 		<div class="tickers-cards">
-			<!-- Gold Card -->
-			{#if tickers.goldItem}
-				<div class="tickers-card">
-					<div class="tickers-card-header">
-						<span class="tickers-card-label gold">XAU Gold</span>
-					</div>
-
-					<div class="tickers-chips">
-						<button
-							class="tickers-chip"
-							class:active-gold={tickers.goldUnit === 'luong'}
-							onclick={() => tickers.selectGoldUnit('luong')}
-						>SJC Lượng</button>
-						<button
-							class="tickers-chip"
-							class:active-gold={tickers.goldUnit === 'chi'}
-							onclick={() => tickers.selectGoldUnit('chi')}
-						>SJC Chỉ</button>
-					</div>
-
-					<div class="tickers-price-row">
-						<span class="tickers-price-label">Buy</span>
-						<div class="tickers-price-value-wrap">
-							<span class="tickers-price-value">{formatVND(tickers.goldItem.buyPrice)}</span>
-							<span class="tickers-price-unit">{tickers.goldItem.unit}</span>
-						</div>
-					</div>
-					<div class="tickers-price-row">
-						<span class="tickers-price-label">Sell</span>
-						<div class="tickers-price-value-wrap">
-							<span class="tickers-price-value">{formatVND(tickers.goldItem.sellPrice)}</span>
-							<span class="tickers-price-unit">{tickers.goldItem.unit}</span>
-						</div>
-					</div>
-					<div class="tickers-spread-row">
-						<span class="tickers-spread-label">Spread</span>
-						<span class="tickers-spread-value">
-							{formatSpread(tickers.goldItem.buyPrice, tickers.goldItem.sellPrice)}
-						</span>
-					</div>
-				</div>
-			{/if}
-
-			<!-- Silver Card -->
+			<!-- Metals Card (Gold / Silver tabs) -->
 			<div class="tickers-card">
 				<div class="tickers-card-header">
-					<span class="tickers-card-label silver">XAG Silver</span>
-				</div>
-
-				<div class="tickers-chips">
-					<button
-						class="tickers-chip"
-						class:active-silver={tickers.selectedSilver === tickers.silverItems[0]}
-						onclick={() => tickers.selectSilver(0)}
-					>PQ Kg</button>
-					{#if tickers.silverItems.length > 1}
+					<div class="tickers-card-tabs">
 						<button
-							class="tickers-chip"
-							class:active-silver={tickers.selectedSilver === tickers.silverItems[1]}
-							onclick={() => tickers.selectSilver(1)}
-						>PQ Lượng</button>
-					{/if}
+							class="tickers-card-tab"
+							class:active-gold={metalTab === 'gold'}
+							onclick={() => (metalTab = 'gold')}>
+							SJC Gold
+						</button>
+						<button
+							class="tickers-card-tab"
+							class:active-silver={metalTab === 'silver'}
+							onclick={() => (metalTab = 'silver')}>
+							PQ Silver
+						</button>
+					</div>
+					<div class="tickers-card-status">
+						<FreshnessDot elapsed={tickers.metalsElapsed} ttl={tickers.metalsTtl} />
+						<button
+							class="tickers-card-refresh"
+							onclick={() => tickers.refreshMetals()}
+							disabled={fetchingMetals}
+							title="Refresh metals">
+							<SpinnerIcon
+								size={10}
+								class={fetchingMetals ? 'tickers-spinner' : ''}
+								style={fetchingMetals ? `animation-duration: ${METALS_SPIN_MS}ms` : ''} />
+						</button>
+					</div>
 				</div>
 
-				{#if tickers.selectedSilver}
-					<div class="tickers-price-row">
-						<span class="tickers-price-label">Buy</span>
-						<div class="tickers-price-value-wrap">
-							<span class="tickers-price-value">{formatVND(tickers.selectedSilver.buyPrice)}</span>
-							<span class="tickers-price-unit">{tickers.selectedSilver.unit}</span>
+				{#if metalTab === 'gold' && tickers.goldItem}
+					<div class="tickers-metal-table">
+						<div class="tickers-metal-header">
+							<span></span>
+							<span class="tickers-metal-col-label">Buy</span>
+							<span class="tickers-metal-col-label">Sell</span>
 						</div>
-					</div>
-					<div class="tickers-price-row">
-						<span class="tickers-price-label">Sell</span>
-						<div class="tickers-price-value-wrap">
-							<span class="tickers-price-value">{formatVND(tickers.selectedSilver.sellPrice)}</span>
-							<span class="tickers-price-unit">{tickers.selectedSilver.unit}</span>
+						<div class="tickers-metal-row">
+							<span class="tickers-metal-unit">Chỉ (VND)</span>
+							<span class="tickers-metal-value">{formatVND(tickers.goldItem.buyChi)}</span>
+							<span class="tickers-metal-value">{formatVND(tickers.goldItem.sellChi)}</span>
+						</div>
+						<div class="tickers-metal-row">
+							<span class="tickers-metal-unit">Lượng (VND)</span>
+							<span class="tickers-metal-value">{formatVND(tickers.goldItem.buyLuong)}</span>
+							<span class="tickers-metal-value">{formatVND(tickers.goldItem.sellLuong)}</span>
 						</div>
 					</div>
 					<div class="tickers-spread-row">
 						<span class="tickers-spread-label">Spread</span>
 						<span class="tickers-spread-value">
-							{formatSpread(tickers.selectedSilver.buyPrice, tickers.selectedSilver.sellPrice)}
+							{formatSpread(tickers.goldItem.buyChi, tickers.goldItem.sellChi)} / {formatSpread(
+								tickers.goldItem.buyLuong,
+								tickers.goldItem.sellLuong,
+							)}
 						</span>
+					</div>
+				{:else if metalTab === 'silver' && tickers.silverItems.length}
+					<div class="tickers-metal-table">
+						<div class="tickers-metal-header">
+							<span></span>
+							<span class="tickers-metal-col-label">Buy</span>
+							<span class="tickers-metal-col-label">Sell</span>
+						</div>
+						{#each tickers.silverItems as item}
+							<div class="tickers-metal-row">
+								<span class="tickers-metal-unit"
+									>{item.unit?.includes('kg') ? 'Kg' : 'Lượng'} (VND)</span>
+								<span class="tickers-metal-value">{formatVND(item.buyPrice)}</span>
+								<span class="tickers-metal-value">{formatVND(item.sellPrice)}</span>
+							</div>
+						{/each}
+					</div>
+					<div class="tickers-spread-row">
+						<span class="tickers-spread-label">Spread</span>
+						<span class="tickers-spread-value">
+							{tickers.silverItems.map((item) => formatSpread(item.buyPrice, item.sellPrice)).join(' / ')}
+						</span>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Crypto Card (BTC / ETH / SOL tabs) -->
+			<div class="tickers-card">
+				<div class="tickers-card-header">
+					<div class="tickers-card-tabs">
+						{#each CRYPTO as coin}
+							<button
+								class="tickers-card-tab"
+								class:active-crypto={cryptoTab === coin.id}
+								style:--crypto-accent={coin.accent}
+								onclick={() => (cryptoTab = coin.id)}>
+								{coin.id}
+							</button>
+						{/each}
+					</div>
+					<div class="tickers-card-status">
+						<FreshnessDot elapsed={tickers.cryptoElapsed} ttl={tickers.cryptoTtl} />
+						<button
+							class="tickers-card-refresh"
+							onclick={() => tickers.refreshCrypto()}
+							disabled={fetchingCrypto}
+							title="Refresh crypto">
+							<SpinnerIcon
+								size={10}
+								class={fetchingCrypto ? 'tickers-spinner' : ''}
+								style={fetchingCrypto ? `animation-duration: ${CRYPTO_SPIN_MS}ms` : ''} />
+						</button>
+					</div>
+				</div>
+
+				{#if tickers.getCryptoTicker(cryptoTab)}
+					{@const item = tickers.getCryptoTicker(cryptoTab)!}
+					{@const up = item.priceChange >= 0}
+					<div class="tickers-price-row">
+						<span class="tickers-price-label">Price</span>
+						<div class="tickers-price-value-wrap">
+							<span class="tickers-price-value tickers-crypto-price">{formatUSDT(item.lastPrice)}</span>
+							<span class="tickers-price-unit">USDT</span>
+						</div>
+					</div>
+					<div class="tickers-price-row">
+						<span class="tickers-price-label">24H Change</span>
+						<div class="tickers-price-value-wrap">
+							<span class="tickers-crypto-change" class:up class:down={!up}>
+								{up ? '+' : ''}{formatUSDT(item.priceChange)}
+							</span>
+							<span class="tickers-crypto-pct" class:up class:down={!up}>
+								({up ? '+' : ''}{item.priceChangePercent.toFixed(2)}%)
+							</span>
+						</div>
+					</div>
+					<div class="tickers-crypto-range">
+						<span class="tickers-crypto-range-pair">
+							<span class="tickers-crypto-range-label">L</span>
+							<span class="tickers-crypto-range-value">{formatUSDT(item.lowPrice)}</span>
+						</span>
+						<span class="tickers-crypto-range-pair">
+							<span class="tickers-crypto-range-label">H</span>
+							<span class="tickers-crypto-range-value">{formatUSDT(item.highPrice)}</span>
+						</span>
+					</div>
+				{:else}
+					<div class="tickers-price-row">
+						<Skeleton class="h-6 w-32" />
 					</div>
 				{/if}
 			</div>
@@ -196,20 +258,15 @@
 		<div class="tickers-chart-section">
 			<div class="tickers-chart-header">
 				<div class="tickers-chart-tabs">
-					<button
-						class="tickers-chart-tab"
-						class:active-gold={tickers.chartAsset === 'gold'}
-						onclick={() => tickers.fetchChart('gold', tickers.chartDuration)}
-					>
-						Gold
-					</button>
-					<button
-						class="tickers-chart-tab"
-						class:active-silver={tickers.chartAsset === 'silver'}
-						onclick={() => tickers.fetchChart('silver', tickers.chartDuration)}
-					>
-						Silver
-					</button>
+					{#each [{ id: 'gold' as const, label: 'Gold', accent: '#c9a84c' }, { id: 'silver' as const, label: 'Silver', accent: '#8a94a8' }, ...CRYPTO.map( (c) => ({ id: c.id, label: c.id, accent: c.accent }), )] as tab}
+						<button
+							class="tickers-chart-tab"
+							class:active={tickers.chartAsset === tab.id}
+							style:--tab-accent={tab.accent}
+							onclick={() => tickers.fetchChart(tab.id, tickers.chartDuration)}>
+							{tab.label}
+						</button>
+					{/each}
 				</div>
 				<div class="tickers-chart-sub-controls">
 					<div class="tickers-candle-sizes">
@@ -219,8 +276,7 @@
 								<button
 									class="tickers-candle-chip"
 									class:active={candleSize === s.value}
-									onclick={() => candleSize = s.value}
-								>
+									onclick={() => (candleSize = s.value)}>
 									{s.label}
 								</button>
 							{/each}
@@ -233,8 +289,7 @@
 								<button
 									class="tickers-duration-chip"
 									class:active={tickers.chartDuration === d.value && tickers.chartData}
-									onclick={() => tickers.fetchChart(tickers.chartAsset, d.value)}
-								>
+									onclick={() => tickers.fetchChart(tickers.chartAsset, d.value)}>
 									{d.label}
 								</button>
 							{/each}
@@ -243,28 +298,30 @@
 				</div>
 			</div>
 
-			<div class="tickers-chart-body">
-				{#if tickers.chartLoading}
-					<div class="tickers-chart-loading">
-						<RefreshCw class="tickers-spinner" size={16} />
-						<span>Loading chart...</span>
-					</div>
-				{:else if tickers.chartError}
-					<div class="tickers-chart-placeholder">
-						{tickers.chartError}
-					</div>
-				{:else if tickers.chartData}
-					<PriceChart
-						data={tickers.chartData}
-						accentColor={tickers.chartAsset === 'gold' ? '#c9a84c' : '#8a94a8'}
-						{candleSize}
-					/>
-				{:else}
-					<div class="tickers-chart-placeholder">
-						Select a timeframe to view price history
-					</div>
-				{/if}
-			</div>
+			<LoadingOverlay loading={tickers.chartLoading} accentColor={CHART_ACCENTS[tickers.chartAsset] ?? '#4a9eff'}>
+				<div class="tickers-chart-body">
+					{#if tickers.chartError && !tickers.chartData}
+						<div class="tickers-chart-placeholder">
+							{tickers.chartError}
+						</div>
+					{:else if tickers.chartData}
+						<PriceChart
+							data={tickers.chartData}
+							accentColor={CHART_ACCENTS[tickers.chartAsset] ?? '#e8e6e3'}
+							priceFormatter={tickers.isCryptoAsset ? USDT_FORMATTER : undefined}
+							{candleSize} />
+					{:else}
+						<div class="tickers-chart-placeholder">
+							{#if tickers.chartLoading}
+								<SpinnerIcon class="tickers-spinner" size={16} />
+								<span>Loading chart...</span>
+							{:else}
+								Select a timeframe to view price history
+							{/if}
+						</div>
+					{/if}
+				</div>
+			</LoadingOverlay>
 		</div>
 	{/if}
 </div>
@@ -280,9 +337,6 @@
 
 	/* Header */
 	.tickers-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
 		margin-bottom: 24px;
 		padding-bottom: 16px;
 		border-bottom: 1px solid #2a2a36;
@@ -292,61 +346,8 @@
 		font-weight: 600;
 		letter-spacing: -0.2px;
 	}
-	.tickers-header-right {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-	.tickers-status {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 11px;
-		color: #9a9aa6;
-	}
-	.tickers-status-toggle {
-		background: none;
-		border: none;
-		padding: 0;
-		font: inherit;
-		color: inherit;
-		cursor: pointer;
-	}
-	.tickers-refresh-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
-		border-radius: 6px;
-		border: 1px solid #2a2a36;
-		background: transparent;
-		color: #6b6b76;
-		cursor: pointer;
-		transition: all 0.12s ease;
-	}
-	.tickers-refresh-btn:hover {
-		border-color: #6b6b76;
-		color: #e8e6e3;
-		background: rgba(255, 255, 255, 0.03);
-	}
-	.tickers-refresh-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-	.tickers-dot {
-		width: 5px;
-		height: 5px;
-		background: #2d9f6f;
-		border-radius: 9999px;
-		animation: pulse 2s infinite;
-	}
-	.tickers-dot.stale {
-		background: #d4874d;
-	}
 	:global(.tickers-spinner) {
 		animation: spin 1s linear infinite;
-		color: #6b6b76;
 	}
 
 	/* Cards grid: stack on mobile, side-by-side on tablet+ */
@@ -374,60 +375,113 @@
 		background: #22222e;
 	}
 
+	/* Card header: tabs left, status right */
 	.tickers-card-header {
 		display: flex;
+		align-items: flex-end;
 		justify-content: space-between;
-		align-items: center;
 		margin-bottom: 16px;
+		border-bottom: 1px solid #2a2a36;
 	}
-	.tickers-card-label {
-		font-size: 12px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.8px;
+	.tickers-card-status {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		flex-shrink: 0;
+		padding-bottom: 8px;
 	}
-	.tickers-card-label.gold {
-		color: #c9a84c;
+	.tickers-card-refresh {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		border-radius: 3px;
+		border: none;
+		background: transparent;
+		color: #6b6b76;
+		cursor: pointer;
+		transition: all 0.12s ease;
 	}
-	.tickers-card-label.silver {
-		color: #8a94a8;
+	.tickers-card-refresh:hover {
+		color: #e8e6e3;
+		background: rgba(255, 255, 255, 0.05);
+	}
+	.tickers-card-refresh:disabled {
+		cursor: not-allowed;
 	}
 
-	/* Chips */
-	.tickers-chips {
+	/* Card tabs — underline style to differentiate from unit chips */
+	.tickers-card-tabs {
 		display: flex;
-		gap: 4px;
-		margin-bottom: 16px;
-		flex-wrap: wrap;
+		gap: 16px;
 	}
-	.tickers-chip {
+	.tickers-card-tab {
 		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
-		font-size: 10px;
-		font-weight: 500;
-		padding: 4px 10px;
-		border-radius: 4px;
-		border: 1px solid #2a2a36;
-		color: #8a8a96;
+		font-size: 12px;
+		font-weight: 600;
+		letter-spacing: 0.3px;
+		padding: 0 0 8px;
+		border: none;
+		border-bottom: 2px solid transparent;
+		margin-bottom: -1px;
+		color: #6b6b76;
 		background: transparent;
 		cursor: pointer;
 		transition: all 0.12s ease;
 	}
-	.tickers-chip:hover {
-		border-color: #6b6b76;
+	.tickers-card-tab:hover {
+		color: #8a8a96;
 	}
-	.tickers-chip.active-gold {
-		background: #c9a84c;
-		color: #0f0f14;
-		border-color: #c9a84c;
-		font-weight: 600;
+	.tickers-card-tab.active-gold {
+		color: #d4a03a;
+		border-bottom-color: #d4a03a;
 	}
-	.tickers-chip.active-silver {
-		background: #8a94a8;
-		color: #0f0f14;
-		border-color: #8a94a8;
-		font-weight: 600;
+	.tickers-card-tab.active-silver {
+		color: #a0a8b8;
+		border-bottom-color: #a0a8b8;
+	}
+	.tickers-card-tab.active-crypto {
+		color: var(--crypto-accent);
+		border-bottom-color: var(--crypto-accent);
 	}
 
+	/* Metal prices — compact table: unit | buy | sell */
+	.tickers-metal-table {
+		display: grid;
+		grid-template-columns: auto 1fr 1fr;
+		gap: 4px 12px;
+		padding: 8px 0;
+	}
+	.tickers-metal-header {
+		display: contents;
+	}
+	.tickers-metal-row {
+		display: contents;
+	}
+	.tickers-metal-col-label {
+		font-size: 10px;
+		font-weight: 500;
+		color: #8a8a96;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		text-align: right;
+	}
+	.tickers-metal-unit {
+		font-size: 10px;
+		font-weight: 500;
+		color: #8a8a96;
+		align-self: center;
+	}
+	.tickers-metal-value {
+		font-family: 'Geist Mono', 'GeistMono', monospace;
+		font-size: 16px;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.3px;
+		color: #e8e6e3;
+		text-align: right;
+	}
 	/* Price rows */
 	.tickers-price-row {
 		display: flex;
@@ -474,7 +528,7 @@
 		display: flex;
 		justify-content: flex-end;
 		align-items: center;
-		padding-top: 12px;
+		padding-top: 8px;
 		margin-top: 4px;
 		border-top: 1px solid #2a2a36;
 		gap: 6px;
@@ -544,12 +598,12 @@
 	}
 	.tickers-chart-tabs {
 		display: flex;
-		gap: 4px;
 		background: #1a1a24;
 		margin: -20px -20px 0;
 		padding: 16px 20px 12px;
 		border-radius: 12px 12px 0 0;
 		border-bottom: 1px solid #2a2a36;
+		gap: 0;
 	}
 	@media (max-width: 639px) {
 		.tickers-chart-tabs {
@@ -605,30 +659,36 @@
 	}
 	.tickers-chart-tab {
 		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
-		font-size: 12px;
+		font-size: 11px;
 		font-weight: 500;
-		padding: 6px 14px;
-		border-radius: 4px;
+		padding: 6px 12px;
 		border: 1px solid #2a2a36;
+		border-right: none;
+		border-radius: 0;
 		color: #8a8a96;
 		background: transparent;
 		cursor: pointer;
 		transition: all 0.12s ease;
 	}
+	.tickers-chart-tab:first-child {
+		border-radius: 4px 0 0 4px;
+	}
+	.tickers-chart-tab:last-child {
+		border-radius: 0 4px 4px 0;
+		border-right: 1px solid #2a2a36;
+	}
 	.tickers-chart-tab:hover {
-		border-color: #6b6b76;
+		background: rgba(255, 255, 255, 0.03);
+		color: #e8e6e3;
 	}
-	.tickers-chart-tab.active-gold {
-		background: rgba(201, 168, 76, 0.15);
-		color: #c9a84c;
-		border-color: rgba(201, 168, 76, 0.3);
+	.tickers-chart-tab.active {
+		background: color-mix(in srgb, var(--tab-accent) 15%, transparent);
+		color: var(--tab-accent);
+		border-color: color-mix(in srgb, var(--tab-accent) 30%, transparent);
 		font-weight: 600;
 	}
-	.tickers-chart-tab.active-silver {
-		background: rgba(138, 148, 168, 0.15);
-		color: #8a94a8;
-		border-color: rgba(138, 148, 168, 0.3);
-		font-weight: 600;
+	.tickers-chart-tab.active + .tickers-chart-tab {
+		border-left-color: color-mix(in srgb, var(--tab-accent) 30%, transparent);
 	}
 	.tickers-chart-durations {
 		display: flex;
@@ -667,8 +727,7 @@
 		min-height: 340px;
 	}
 
-	.tickers-chart-placeholder,
-	.tickers-chart-loading {
+	.tickers-chart-placeholder {
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -707,15 +766,67 @@
 		border-color: #6b6b76;
 	}
 
-	@keyframes pulse {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.4;
+	/* Crypto */
+	.tickers-crypto-price {
+		font-size: 20px;
+	}
+	@media (min-width: 640px) {
+		.tickers-crypto-price {
+			font-size: 18px;
 		}
 	}
+	.tickers-crypto-change {
+		font-family: 'Geist Mono', 'GeistMono', monospace;
+		font-size: 14px;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+	.tickers-crypto-change.up {
+		color: #2d9f6f;
+	}
+	.tickers-crypto-change.down {
+		color: #c44e4e;
+	}
+	.tickers-crypto-pct {
+		font-family: 'Geist Mono', 'GeistMono', monospace;
+		font-size: 10px;
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+	}
+	.tickers-crypto-pct.up {
+		color: #2d9f6f;
+	}
+	.tickers-crypto-pct.down {
+		color: #c44e4e;
+	}
+	.tickers-crypto-range {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 16px;
+		padding-top: 12px;
+		margin-top: 4px;
+		border-top: 1px solid #2a2a36;
+	}
+	.tickers-crypto-range-pair {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+	}
+	.tickers-crypto-range-label {
+		font-size: 10px;
+		color: #8a8a96;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+	.tickers-crypto-range-value {
+		font-family: 'Geist Mono', 'GeistMono', monospace;
+		font-size: 13px;
+		font-weight: 600;
+		color: #d4874d;
+		font-variant-numeric: tabular-nums;
+	}
+
 	@keyframes spin {
 		from {
 			transform: rotate(0deg);

@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit'
+
+import { fetchChartData } from '../../phuquy-client'
 import type { RequestHandler } from './$types'
-import { fetchChartData } from '../phuquy-client'
 
 export const GET: RequestHandler = async ({ url }) => {
 	const categoryId = Number(url.searchParams.get('categoryId'))
