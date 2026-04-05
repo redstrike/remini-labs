@@ -1,651 +1,687 @@
 <script lang="ts">
 	import { useWeather, getWeatherCondition } from './use-weather.svelte'
-
-	import { Button } from '$lib/components/ui/button/index.js'
-	import * as Card from '$lib/components/ui/card/index.js'
-	import { Skeleton } from '$lib/components/ui/skeleton/index.js'
-	import { MapPin, LoaderCircle, Cloud, Wind, Droplets, RefreshCw, Globe, TriangleAlert, Moon } from '@lucide/svelte'
+	import {
+		RefreshCw,
+		TriangleAlert,
+		MapPin,
+		LoaderCircle,
+		Globe,
+		Wind,
+		Droplets,
+		Smartphone,
+		Tablet,
+		Monitor,
+	} from '@lucide/svelte'
 
 	const weather = useWeather(true)
+
+	import { browser } from '$app/environment'
+
+	type ViewMode = 'phone' | 'tablet' | 'laptop'
+
+	function detectViewMode(): ViewMode {
+		if (!browser) return 'laptop'
+		const w = window.innerWidth
+		if (w < 720) return 'phone'
+		if (w < 1280) return 'tablet'
+		return 'laptop'
+	}
+
+	let viewMode = $state<ViewMode>(detectViewMode())
+
+	const viewWidths: Record<ViewMode, string> = {
+		phone: '360px',
+		tablet: '720px',
+		laptop: '1280px',
+	}
+
+	function getAccentColor(animationType: string, isDay: boolean, temp: number): string {
+		if (animationType === 'storm') return '#8b7bb8'
+		if (animationType === 'rain') return '#5b8fb9'
+		if (animationType === 'snow') return '#9ab8d4'
+		if (animationType === 'cloud') return '#8a8a96'
+		if (!isDay) return '#6b8aad'
+		if (temp >= 35) return '#c47a4d'
+		return '#c9a84c'
+	}
 </script>
 
-<div class="weather-room relative p-4 md:p-8">
-<div class="container mx-auto max-w-4xl">
-	<div class="flex flex-col gap-6">
-		<!-- Header -->
-		<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-			<div>
-				<h1 class="flex items-center gap-2 text-3xl font-bold tracking-tight">
-					Weather
-					{#if weather.isUpdatingInBg || weather.loadingState === 'fetching' || weather.loadingState === 'locating'}
-						<LoaderCircle class="h-4 w-4 animate-spin text-muted-foreground" />
-					{/if}
-				</h1>
-				<div class="mt-1 flex flex-wrap items-center gap-2 text-muted-foreground">
-					<p>Real-time local weather</p>
-					{#if weather.relativeTime}
-						<span class="rounded-full bg-muted px-2 py-0.5 text-xs"
-							>Last updated: {weather.relativeTime}</span>
-					{/if}
-					{#if weather.isApproxLocation && weather.displayWeather}
-						<span
-							class="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-xs text-amber-500">
-							<TriangleAlert class="h-3 w-3" />
-							Approximate location{weather.ipCity ? ` · ${weather.ipCity}` : ''}
-						</span>
-					{/if}
-				</div>
-			</div>
-			<div class="flex w-full justify-end sm:w-auto">
-				{#if weather.displayWeather}
-					<Button
-						variant="secondary"
-						size="sm"
-						class="gap-2 rounded-full px-4 shadow-sm transition-all hover:shadow-md"
-						onclick={() => weather.requestLocation(true)}
-						disabled={weather.loadingState !== 'idle'}
-						title="Refresh weather and location data">
-						<RefreshCw
-							class="h-4 w-4 {weather.loadingState !== 'idle'
-								? 'animate-spin text-primary'
-								: 'text-muted-foreground'}" />
-						<span class="font-medium">Refresh</span>
-					</Button>
-				{/if}
-			</div>
+<svelte:head>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+	<link
+		rel="stylesheet"
+		href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;600;700&display=swap" />
+</svelte:head>
+
+<div class="weather-page">
+	<!-- Device toggle toolbar -->
+	<div class="weather-toolbar">
+		<div class="weather-toolbar-left">
+			<span class="weather-toolbar-label">Preview</span>
 		</div>
+		<div class="weather-toggle-group">
+			<button
+				class="weather-toggle-btn"
+				class:active={viewMode === 'phone'}
+				title="Phone (360px)"
+				onclick={() => (viewMode = 'phone')}><Smartphone size={14} /></button>
+			<button
+				class="weather-toggle-btn"
+				class:active={viewMode === 'tablet'}
+				title="Tablet (720px)"
+				onclick={() => (viewMode = 'tablet')}><Tablet size={14} /></button>
+			<button
+				class="weather-toggle-btn"
+				class:active={viewMode === 'laptop'}
+				title="Laptop (1280px)"
+				onclick={() => (viewMode = 'laptop')}><Monitor size={14} /></button>
+		</div>
+	</div>
 
-		{#if (weather.loadingState === 'locating' || weather.loadingState === 'fetching') && !weather.displayWeather}
-			<div class="space-y-6">
-				<Skeleton class="h-[240px] w-full rounded-xl" />
-				<div class="grid gap-6 md:grid-cols-3">
-					<Skeleton class="h-[180px] w-full rounded-xl" />
-					<Skeleton class="h-[180px] w-full rounded-xl md:col-span-2" />
-				</div>
-			</div>
-		{:else if weather.displayWeather}
-			{@const weatherInfo = weather.displayWeather}
-			{#if weatherInfo.weather}
-				{@const currentCondition = getWeatherCondition(weatherInfo.weather.current.weather_code)}
-				{@const isDay = weatherInfo.weather.current.is_day === 1}
-				{@const animType =
-					currentCondition.animationType === 'sun' && !isDay ? 'moon' : currentCondition.animationType}
-				{@const temp = Math.round(weatherInfo.weather.current.temperature_2m)}
-				{@const gradientClass =
-					animType === 'storm' ? (isDay ? 'weather-grad-storm-day' : 'weather-grad-storm-night')
-					: animType === 'rain' ? (isDay ? 'weather-grad-rain-day' : 'weather-grad-rain-night')
-					: animType === 'snow' ? (isDay ? 'weather-grad-snow-day' : 'weather-grad-snow-night')
-					: animType === 'cloud' ? (isDay ? 'weather-grad-cloud-day' : 'weather-grad-cloud-night')
-					: animType === 'moon' ? 'weather-grad-clear-night'
-					: temp >= 35 ? 'weather-grad-hot'
-					: 'weather-grad-clear-day'}
-
-				<div class="weather-page-bg {gradientClass} rounded-2xl p-4 md:p-6 relative overflow-hidden">
-				<!-- Atmospheric overlays -->
-				{#if animType === 'sun' || (animType !== 'moon' && temp >= 30)}
-					<div class="weather-sun-glow" aria-hidden="true"></div>
-				{/if}
-				{#if animType === 'rain' || animType === 'storm'}
-					<div class="weather-rain-overlay" aria-hidden="true">
-						{#each Array(20) as _, i}
-							<span class="weather-rain-streak" style="--i:{i}"></span>
-						{/each}
-					</div>
-				{/if}
-				{#if animType === 'cloud' || animType === 'rain'}
-					<div class="weather-fog" aria-hidden="true"></div>
-				{/if}
-				{#if animType === 'snow'}
-					<div class="weather-snow-overlay" aria-hidden="true">
-						{#each Array(15) as _, i}
-							<span class="weather-snow-particle" style="--i:{i}">•</span>
-						{/each}
-					</div>
-				{/if}
-
-				<div class="grid gap-6 md:grid-cols-3 relative z-10">
-					<Card.Root class="relative overflow-hidden md:col-span-2 border-0 bg-black/20 backdrop-blur-sm">
-						<!-- Animated background icon -->
-						<div
-							class="weather-bg-icon pointer-events-none absolute top-0 right-0 p-6 select-none"
-							aria-hidden="true">
-							{#if animType === 'sun'}
-								{@const Icon = currentCondition.icon}
-								<Icon class="anim-sun h-44 w-44 text-amber-400" />
-							{:else if animType === 'moon'}
-								<Moon class="anim-moon h-44 w-44 text-sky-300" />
-							{:else if animType === 'cloud'}
-								{@const Icon = currentCondition.icon}
-								<Icon class="anim-cloud h-44 w-44 text-foreground" />
-							{:else if animType === 'rain'}
-								{@const Icon = currentCondition.icon}
-								<div class="relative">
-									<Icon class="anim-cloud h-44 w-44 text-sky-400" />
-									<div class="rain-drops" aria-hidden="true">
-										{#each [0, 1, 2, 3, 4, 5, 6, 7] as i}
-											<span class="rain-drop" style="--i:{i}"></span>
-										{/each}
-									</div>
-								</div>
-							{:else if animType === 'snow'}
-								{@const Icon = currentCondition.icon}
-								<div class="relative">
-									<Icon class="anim-snow-icon h-44 w-44 text-sky-200" />
-									<div class="snow-flakes" aria-hidden="true">
-										{#each [0, 1, 2, 3, 4, 5] as i}
-											<span class="snow-flake" style="--i:{i}">❄</span>
-										{/each}
-									</div>
-								</div>
-							{:else if animType === 'storm'}
-								{@const Icon = currentCondition.icon}
-								<div class="relative">
-									<Icon class="anim-cloud h-44 w-44 text-violet-400" />
-									<div class="lightning" aria-hidden="true">⚡</div>
-								</div>
+	<!-- Dot-grid canvas -->
+	<div class="weather-canvas">
+		<div class="weather-dots" aria-hidden="true"></div>
+		<div class="weather-device" style="width: {viewWidths[viewMode]}">
+			<div class="weather">
+				<!-- Header -->
+				<div class="weather-header">
+					<h1 class="weather-title">Weather</h1>
+					<div class="weather-header-right">
+						<div class="weather-status">
+							{#if weather.loadingState !== 'idle'}
+								<RefreshCw class="weather-spinner" size={14} />
+							{:else if weather.displayWeather}
+								<span class="weather-dot"></span>
 							{/if}
+							<span class="weather-status-text">
+								{#if weather.loadingState === 'locating'}
+									Locating...
+								{:else if weather.loadingState === 'fetching'}
+									Fetching...
+								{:else if weather.relativeTime}
+									{weather.relativeTime}
+								{/if}
+							</span>
 						</div>
+						{#if weather.displayWeather}
+							<button
+								class="weather-refresh-btn"
+								onclick={() => weather.requestLocation(true)}
+								disabled={weather.loadingState !== 'idle'}
+								title="Refresh weather">
+								<RefreshCw size={13} class={weather.loadingState !== 'idle' ? 'weather-spinner' : ''} />
+							</button>
+						{/if}
+					</div>
+				</div>
 
-						<Card.Content class="space-y-5">
-							<!-- Location label -->
-							<div>
+				{#if (weather.loadingState === 'locating' || weather.loadingState === 'fetching') && !weather.displayWeather}
+					<!-- Loading skeleton -->
+					<div class="weather-card weather-skeleton">
+						<div class="skel skel-temp"></div>
+						<div class="skel skel-text"></div>
+						<div class="skel skel-text-sm"></div>
+					</div>
+				{:else if weather.displayWeather}
+					{@const weatherInfo = weather.displayWeather}
+					{#if weatherInfo.weather}
+						{@const condition = getWeatherCondition(weatherInfo.weather.current.weather_code)}
+						{@const isDay = weatherInfo.weather.current.is_day === 1}
+						{@const animType =
+							condition.animationType === 'sun' && !isDay ? 'moon' : condition.animationType}
+						{@const temp = Math.round(weatherInfo.weather.current.temperature_2m)}
+						{@const accent = getAccentColor(animType, isDay, temp)}
+						{@const Icon = condition.icon}
+
+						<div class="weather-card" style="--accent: {accent}">
+							<div class="weather-grid">
+								<div class="weather-info">
+									<div class="weather-temp-row">
+										<span class="weather-temp">{temp}°</span>
+										<span class="weather-temp-unit">C</span>
+									</div>
+									<div class="weather-condition">{condition.text}</div>
+									<div class="weather-feels">
+										Feels like {Math.round(weatherInfo.weather.current.apparent_temperature)}°
+									</div>
+								</div>
+								<div class="weather-icon-wrap">
+									<Icon
+										size={undefined}
+										style="color: {accent}; opacity: 0.8; width: 100%; height: 100%;" />
+								</div>
+								<div class="weather-stats">
+									<div class="weather-stat">
+										<Wind size={14} />
+										<span>{weatherInfo.weather.current.wind_speed_10m} km/h</span>
+									</div>
+									<div class="weather-stat">
+										<Droplets size={14} />
+										<span>{weatherInfo.weather.current.relative_humidity_2m}%</span>
+									</div>
+								</div>
+							</div>
+
+							<div class="weather-location">
 								{#if weather.isApproxLocation && weather.ipCity}
-									<p class="text-xl font-semibold tracking-tight text-white">
-										{weather.ipCity}
-									</p>
-									<p
-										class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs text-white/50">
-										<span>Lat: {weatherInfo.lat.toFixed(4)}</span>
-										<span>Lng: {weatherInfo.lng.toFixed(4)}</span>
-										{#if weather.ipIsp}<span>· {weather.ipIsp}</span>{/if}
-									</p>
+									<span>{weather.ipCity}</span>
+									<span class="weather-approx">
+										<TriangleAlert size={11} />
+										Approximate{weather.ipIsp ? ` · ${weather.ipIsp}` : ''}
+									</span>
 								{:else if weather.gpsCity}
-									<p class="text-xl font-semibold tracking-tight text-white">
-										{weather.gpsCity}
-									</p>
-									<p class="mt-1 flex gap-x-3 font-mono text-xs text-white/50">
-										<span>Lat: {weatherInfo.lat.toFixed(4)}</span>
-										<span>Lng: {weatherInfo.lng.toFixed(4)}</span>
-									</p>
+									<span>{weather.gpsCity}</span>
 								{:else}
-									<p class="flex gap-x-3 font-mono text-xs text-white/50">
-										<span>Lat: {weatherInfo.lat.toFixed(4)}</span>
-										<span>Lng: {weatherInfo.lng.toFixed(4)}</span>
-									</p>
+									<span class="weather-coords">
+										{weatherInfo.lat.toFixed(4)}, {weatherInfo.lng.toFixed(4)}
+									</span>
 								{/if}
 							</div>
-
-							<!-- Temperature + condition -->
-							<div class="flex items-center gap-6 relative">
-								<div class="weather-temp-glow {animType === 'sun' || temp >= 30 ? 'warm' : animType === 'snow' ? 'cold' : 'neutral'}" aria-hidden="true"></div>
-								<span class="weather-temp text-7xl font-bold tracking-tighter tabular-nums relative">
-									{temp}°
-								</span>
-								<div class="flex flex-col">
-									<span class="text-xl font-semibold text-white/90">{currentCondition?.text}</span>
-									<span class="mt-0.5 text-sm text-white/60">
-										Feels like {Math.round(weatherInfo.weather.current.apparent_temperature)}°
-									</span>
-								</div>
-							</div>
-						</Card.Content>
-					</Card.Root>
-
-					<!-- Details Card -->
-					<Card.Root class="weather-detail-card border-white/10 bg-white/5 backdrop-blur-sm">
-						<Card.Header>
-							<Card.Title class="text-white/80">Details</Card.Title>
-						</Card.Header>
-						<Card.Content class="grid gap-4">
-							<div class="flex items-center justify-between">
-								<div class="flex items-center gap-2 text-white/50">
-									<Wind class="h-4 w-4" />
-									<span>Wind</span>
-								</div>
-								<span class="font-medium tabular-nums text-white/90"
-									>{weatherInfo.weather.current.wind_speed_10m} km/h</span>
-							</div>
-							<div class="flex items-center justify-between">
-								<div class="flex items-center gap-2 text-white/50">
-									<Droplets class="h-4 w-4" />
-									<span>Humidity</span>
-								</div>
-								<span class="font-medium tabular-nums text-white/90"
-									>{weatherInfo.weather.current.relative_humidity_2m}%</span>
-							</div>
-							<div class="flex items-center justify-between">
-								<div class="flex items-center gap-2 text-white/50">
-									<Cloud class="h-4 w-4" />
-									<span>Cloud Cover</span>
-								</div>
-								<span class="font-medium tabular-nums text-white/90">{weatherInfo.weather.current.cloud_cover}%</span>
-							</div>
-						</Card.Content>
-					</Card.Root>
-
-					<!-- Forecast (Daily) -->
-					<Card.Root class="md:col-span-3 weather-detail-card border-white/10 bg-white/5 backdrop-blur-sm">
-						<Card.Header>
-							<Card.Title class="text-white/80">7-Day Forecast</Card.Title>
-						</Card.Header>
-						<Card.Content>
-							<div class="grid grid-cols-2 gap-4 sm:grid-cols-4 md:grid-cols-7">
-								{#each weatherInfo.weather.daily.time as day, i (day)}
-									{@const fc = getWeatherCondition(weatherInfo.weather.daily.weather_code[i])}
-									{@const Icon = fc.icon}
-									<div
-										class="flex flex-col items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-4 text-center">
-										<span class="text-sm font-medium text-white/70">
-											{new Date(day).toLocaleDateString(undefined, { weekday: 'short' })}
-										</span>
-										<Icon class="h-6 w-6 text-white/80" />
-										<div class="flex flex-col text-sm tabular-nums">
-											<span class="font-bold text-white/90"
-												>{Math.round(weatherInfo.weather.daily.temperature_2m_max[i])}°</span>
-											<span class="text-white/50"
-												>{Math.round(weatherInfo.weather.daily.temperature_2m_min[i])}°</span>
-										</div>
-									</div>
-								{/each}
-							</div>
-						</Card.Content>
-					</Card.Root>
-				</div>
-				</div>
-			{/if}
-		{:else}
-			<!-- Prompt Location Fallback -->
-			<Card.Root class="mt-8 border-border">
-				<Card.Content class="flex flex-col items-center gap-4 p-12 text-center">
-					{#if weather.permissionState === 'denied'}
-						<!-- Denied state: permission cannot be re-prompted, guide user to settings -->
-						<div class="rounded-full bg-amber-500/10 p-4">
-							<Globe class="h-12 w-12 text-amber-500" />
 						</div>
-						<div class="mt-4 space-y-2">
-							<h3 class="text-2xl font-semibold">Location Access Blocked</h3>
-							<p class="mx-auto max-w-md text-muted-foreground">
-								{weather.locationError ||
-									'GPS access was denied. To enable it, open your browser site settings and allow location for this site, then reload the page.'}
-							</p>
-						</div>
-						<div class="mt-4 flex flex-col items-center gap-3 sm:flex-row">
-							<Button variant="outline" size="lg" onclick={() => window.location.reload()}>
-								<RefreshCw class="mr-2 h-5 w-5" />
-								Reload After Allowing
-							</Button>
-						</div>
-					{:else}
-						<!-- Prompt / unknown state: browser prompt can still be triggered -->
-						<div class="rounded-full bg-muted p-4">
-							<MapPin class="h-12 w-12 text-muted-foreground" />
-						</div>
-						<div class="mt-4 space-y-2">
-							<h3 class="text-2xl font-semibold">Location Required</h3>
-							<p class="mx-auto max-w-md text-muted-foreground">
-								{weather.locationError ||
-									"We use your device's location to provide accurate, real-time weather information for your area."}
-							</p>
-						</div>
-						<Button
-							class="mt-4"
-							size="lg"
-							onclick={() => weather.requestLocation(true)}
-							disabled={weather.loadingState !== 'idle'}>
-							{#if weather.loadingState !== 'idle'}
-								<LoaderCircle class="mr-2 h-5 w-5 animate-spin" />
-								Locating...
-							{:else}
-								<MapPin class="mr-2 h-5 w-5" />
-								Get Current Location
-							{/if}
-						</Button>
 					{/if}
-				</Card.Content>
-			</Card.Root>
-		{/if}
+				{:else}
+					<!-- Permission prompt -->
+					<div class="weather-prompt">
+						{#if weather.permissionState === 'denied'}
+							<div class="weather-prompt-icon denied">
+								<Globe size={32} />
+							</div>
+							<h3 class="weather-prompt-title">Location Access Blocked</h3>
+							<p class="weather-prompt-text">
+								{weather.locationError ||
+									'GPS access was denied. Open your browser site settings, allow location for this site, then reload.'}
+							</p>
+							<button class="weather-prompt-btn" onclick={() => window.location.reload()}>
+								<RefreshCw size={16} />
+								Reload After Allowing
+							</button>
+						{:else}
+							<div class="weather-prompt-icon">
+								<MapPin size={32} />
+							</div>
+							<h3 class="weather-prompt-title">Location Required</h3>
+							<p class="weather-prompt-text">
+								{weather.locationError || 'We need your location to show local weather.'}
+							</p>
+							<button
+								class="weather-prompt-btn"
+								onclick={() => weather.requestLocation(true)}
+								disabled={weather.loadingState !== 'idle'}>
+								{#if weather.loadingState !== 'idle'}
+									<LoaderCircle size={16} class="weather-spinner" />
+									Locating...
+								{:else}
+									<MapPin size={16} />
+									Get Current Location
+								{/if}
+							</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+			<!-- .weather -->
+		</div>
+		<!-- .weather-device -->
 	</div>
+	<!-- .weather-canvas -->
 </div>
-</div>
+
+<!-- .weather-page -->
 
 <style>
-	/* ─── Sun: slow rotation + brightness pulse ─── */
-	:global(.anim-sun) {
-		animation:
-			sun-spin 20s linear infinite,
-			sun-pulse 4s ease-in-out infinite;
-		opacity: 0.3;
-		transform-origin: center;
+	/* ─── Page ─── */
+	.weather-page {
+		min-height: calc(100vh - 57px);
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		min-width: 0;
 	}
-	@keyframes sun-spin {
+
+	/* ─── Toolbar ─── */
+	.weather-toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 8px 16px;
+		border-bottom: 1px solid #2a2a36;
+		background: #0f0f14;
+	}
+	.weather-toolbar-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.weather-toolbar-label {
+		font-size: 13px;
+		font-weight: 500;
+		color: #8a8a96;
+		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
+	}
+	.weather-toggle-group {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		background: #1a1a24;
+		border: 1px solid #2a2a36;
+		border-radius: 8px;
+		padding: 2px;
+	}
+	.weather-toggle-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		color: #6b6b76;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.weather-toggle-btn:hover {
+		color: #e8e6e3;
+	}
+	.weather-toggle-btn.active {
+		background: #2a2a36;
+		color: #e8e6e3;
+	}
+
+	/* ─── Dot-grid Canvas ─── */
+	.weather-canvas {
+		flex: 1;
+		position: relative;
+		display: flex;
+		justify-content: center;
+		align-items: flex-start;
+		padding: 24px 8px;
+		overflow-x: auto;
+		overflow-y: hidden;
+		min-width: 0;
+	}
+	.weather-dots {
+		position: absolute;
+		inset: 0;
+		background: radial-gradient(#2a2a36 1px, transparent 1px);
+		background-size: 20px 20px;
+		pointer-events: none;
+	}
+
+	/* ─── Device Frame ─── */
+	.weather-device {
+		position: relative;
+		height: fit-content;
+		border-radius: 16px;
+		background: linear-gradient(180deg, #0d1117 0%, #111827 40%, #0f172a 100%);
+		box-shadow:
+			0 4px 24px rgba(0, 0, 0, 0.3),
+			inset 0 0 0 1px #2a2a36;
+		transition: width 0.3s ease;
+		overflow: hidden;
+		container-type: inline-size;
+	}
+
+	@media (max-width: 480px) {
+		.weather-toolbar {
+			display: none;
+		}
+		.weather-canvas {
+			padding: 0;
+		}
+		.weather-dots {
+			display: none;
+		}
+		.weather-device {
+			width: 100% !important;
+			max-width: 100%;
+			border-radius: 0;
+			box-shadow: none;
+		}
+	}
+
+	/* ─── Weather Content (design tokens live here, not on the container) ─── */
+	.weather {
+		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
+		color: #e8e6e3;
+
+		/* Base: phone (< 720px) */
+		--temp-size: 48px;
+		--temp-unit-size: 18px;
+		--icon-size: 48px;
+		--condition-size: 14px;
+		--feels-size: 13px;
+		--stat-size: 13px;
+		--card-padding: 20px;
+		--grid-layout: 'info icon' 'stats stats';
+		--grid-cols: 1fr auto;
+		--stats-direction: row;
+		--stats-border: 1px solid #2a2a36;
+		--stats-pt: 12px;
+
+		padding: 20px 16px;
+	}
+
+	/* ─── ≥ 720px: two-column ─── */
+	@container (min-width: 720px) {
+		.weather {
+			--temp-size: 56px;
+			--temp-unit-size: 22px;
+			--icon-size: 64px;
+			--condition-size: 16px;
+			--stat-size: 13px;
+			--card-padding: 28px;
+			--grid-layout: 'info icon' 'info stats';
+			--grid-cols: 1fr auto;
+			--stats-direction: column;
+			--stats-border: none;
+			--stats-pt: 0px;
+
+			padding: 28px 24px;
+		}
+	}
+
+	/* ─── ≥ 1280px: scaled two-column ─── */
+	@container (min-width: 1280px) {
+		.weather {
+			--temp-size: 72px;
+			--temp-unit-size: 26px;
+			--icon-size: 96px;
+			--condition-size: 18px;
+			--feels-size: 14px;
+			--stat-size: 14px;
+			--card-padding: 32px;
+			--grid-layout: 'info icon' 'info stats';
+			--grid-cols: 1fr auto;
+			--stats-direction: column;
+			--stats-border: none;
+			--stats-pt: 0px;
+
+			padding: 40px 32px;
+			max-width: 1600px;
+			margin: 0 auto;
+		}
+	}
+
+	/* ─── Header ─── */
+	.weather-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 20px;
+		padding-bottom: 16px;
+		border-bottom: 1px solid #2a2a36;
+	}
+	.weather-title {
+		font-size: 16px;
+		font-weight: 600;
+		letter-spacing: -0.2px;
+	}
+	.weather-header-right {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.weather-status {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 11px;
+		color: #9a9aa6;
+	}
+	.weather-status-text {
+		white-space: nowrap;
+	}
+	.weather-refresh-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border-radius: 6px;
+		border: 1px solid #2a2a36;
+		background: transparent;
+		color: #6b6b76;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.weather-refresh-btn:hover {
+		border-color: #6b6b76;
+		color: #e8e6e3;
+		background: rgba(255, 255, 255, 0.03);
+	}
+	.weather-refresh-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+	.weather-dot {
+		width: 5px;
+		height: 5px;
+		background: #2d9f6f;
+		border-radius: 9999px;
+		animation: pulse 2s infinite;
+	}
+	:global(.weather-spinner) {
+		animation: spin 1s linear infinite;
+		color: #6b6b76;
+	}
+
+	/* ─── Weather Card ─── */
+	.weather-card {
+		background: #1a1a24;
+		border: 1px solid #2a2a36;
+		border-left: 3px solid var(--accent, #8a8a96);
+		border-radius: 12px;
+		padding: var(--card-padding);
+	}
+
+	/* ─── Grid ─── */
+	.weather-grid {
+		display: grid;
+		grid-template-columns: var(--grid-cols);
+		grid-template-areas: var(--grid-layout);
+		gap: 12px 16px;
+		margin-bottom: 16px;
+	}
+	.weather-info {
+		grid-area: info;
+	}
+	.weather-icon-wrap {
+		grid-area: icon;
+		align-self: start;
+		width: var(--icon-size);
+		height: var(--icon-size);
+		transition:
+			width 0.3s ease,
+			height 0.3s ease;
+	}
+	.weather-stats {
+		grid-area: stats;
+		display: flex;
+		flex-direction: var(--stats-direction);
+		gap: 12px;
+		padding-top: var(--stats-pt);
+		border-top: var(--stats-border);
+	}
+	.weather-stat {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: var(--stat-size);
+		font-weight: 500;
+		color: #8a8a96;
+		font-family: 'Geist Mono', monospace;
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* ─── Typography ─── */
+	.weather-temp-row {
+		display: flex;
+		align-items: baseline;
+		gap: 2px;
+		margin-bottom: 4px;
+	}
+	.weather-temp {
+		font-family: 'Geist Mono', monospace;
+		font-size: var(--temp-size);
+		font-weight: 700;
+		letter-spacing: -1.5px;
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		color: var(--accent, #e8e6e3);
+		transition: font-size 0.3s ease;
+	}
+	.weather-temp-unit {
+		font-family: 'Geist Mono', monospace;
+		font-size: var(--temp-unit-size);
+		font-weight: 500;
+		color: #6b6b76;
+		margin-left: 2px;
+		transition: font-size 0.3s ease;
+	}
+	.weather-condition {
+		font-size: var(--condition-size);
+		font-weight: 600;
+		color: #e8e6e3;
+		margin-bottom: 2px;
+		transition: font-size 0.3s ease;
+	}
+	.weather-feels {
+		font-size: var(--feels-size);
+		color: #8a8a96;
+	}
+
+	/* ─── Location ─── */
+	.weather-location {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		font-size: 13px;
+		font-weight: 500;
+		color: #6b6b76;
+		padding-top: 16px;
+		border-top: 1px solid #2a2a36;
+	}
+	.weather-coords {
+		font-family: 'Geist Mono', monospace;
+		font-size: 12px;
+	}
+	.weather-approx {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 11px;
+		color: #d4874d;
+		background: rgba(212, 135, 77, 0.1);
+		border: 1px solid rgba(212, 135, 77, 0.2);
+		border-radius: 9999px;
+		padding: 2px 8px;
+	}
+
+	/* ─── Skeleton ─── */
+	.weather-skeleton {
+		--accent: #2a2a36;
+	}
+	.skel {
+		border-radius: 6px;
+		background: #22222e;
+		animation: pulse 2s infinite;
+	}
+	.skel-temp {
+		width: 120px;
+		height: 56px;
+		margin-bottom: 12px;
+	}
+	.skel-text {
+		width: 140px;
+		height: 16px;
+		margin-bottom: 8px;
+	}
+	.skel-text-sm {
+		width: 100px;
+		height: 13px;
+	}
+
+	/* ─── Permission Prompt ─── */
+	.weather-prompt {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		padding: 48px 24px;
+		background: #1a1a24;
+		border: 1px solid #2a2a36;
+		border-radius: 12px;
+	}
+	.weather-prompt-icon {
+		width: 64px;
+		height: 64px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 9999px;
+		background: rgba(138, 138, 150, 0.1);
+		color: #8a8a96;
+		margin-bottom: 20px;
+	}
+	.weather-prompt-icon.denied {
+		background: rgba(212, 135, 77, 0.1);
+		color: #d4874d;
+	}
+	.weather-prompt-title {
+		font-size: 18px;
+		font-weight: 600;
+		margin-bottom: 8px;
+	}
+	.weather-prompt-text {
+		font-size: 14px;
+		color: #8a8a96;
+		max-width: 360px;
+		margin-bottom: 24px;
+		line-height: 1.5;
+	}
+	.weather-prompt-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 20px;
+		font-size: 14px;
+		font-weight: 500;
+		font-family: inherit;
+		color: #e8e6e3;
+		background: #22222e;
+		border: 1px solid #2a2a36;
+		border-radius: 8px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.weather-prompt-btn:hover {
+		background: #2a2a36;
+		border-color: #6b6b76;
+	}
+	.weather-prompt-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	/* ─── Keyframes ─── */
+	@keyframes pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.4;
+		}
+	}
+	@keyframes spin {
 		from {
 			transform: rotate(0deg);
 		}
 		to {
 			transform: rotate(360deg);
 		}
-	}
-	@keyframes sun-pulse {
-		0%,
-		100% {
-			opacity: 0.25;
-			filter: blur(0px);
-		}
-		50% {
-			opacity: 0.45;
-			filter: blur(1px);
-		}
-	}
-
-	/* ─── Moon: gentle glow pulse ─── */
-	:global(.anim-moon) {
-		animation: moon-pulse 5s ease-in-out infinite;
-		opacity: 0.25;
-	}
-	@keyframes moon-pulse {
-		0%,
-		100% {
-			opacity: 0.1;
-			transform: scale(1);
-		}
-		50% {
-			opacity: 0.25;
-			transform: scale(1.04);
-		}
-	}
-
-	/* ─── Cloud / fog: slow horizontal drift ─── */
-	:global(.anim-cloud) {
-		animation: cloud-float 7s ease-in-out infinite;
-		opacity: 0.2;
-	}
-	@keyframes cloud-float {
-		0%,
-		100% {
-			transform: translateX(0px) translateY(0px);
-		}
-		33% {
-			transform: translateX(-8px) translateY(-5px);
-		}
-		66% {
-			transform: translateX(5px) translateY(-3px);
-		}
-	}
-
-	/* ─── Rain: cloud floats, drops fall ─── */
-	.rain-drops {
-		position: absolute;
-		bottom: -40px;
-		left: 16px;
-		width: 120px;
-		height: 60px;
-		overflow: visible;
-	}
-	.rain-drop {
-		position: absolute;
-		left: calc(var(--i) * 14px);
-		top: 0;
-		width: 2px;
-		height: 14px;
-		border-radius: 999px;
-		background: currentColor;
-		opacity: 0;
-		animation: rain-fall 1.4s linear calc(var(--i) * 0.18s) infinite;
-	}
-	@keyframes rain-fall {
-		0% {
-			transform: translateY(-10px);
-			opacity: 0;
-		}
-		15% {
-			opacity: 0.5;
-		}
-		85% {
-			opacity: 0.4;
-		}
-		100% {
-			transform: translateY(50px);
-			opacity: 0;
-		}
-	}
-
-	/* ─── Snow: icon rotates, flakes drift ─── */
-	:global(.anim-snow-icon) {
-		animation: snow-spin 30s linear infinite;
-		opacity: 0.22;
-	}
-	@keyframes snow-spin {
-		from {
-			transform: rotate(0deg);
-		}
-		to {
-			transform: rotate(-360deg);
-		}
-	}
-	.snow-flakes {
-		position: absolute;
-		top: 10px;
-		left: 10px;
-		width: 120px;
-		height: 120px;
-		pointer-events: none;
-	}
-	.snow-flake {
-		position: absolute;
-		left: calc(var(--i) * 20px);
-		font-size: 14px;
-		opacity: 0;
-		animation: snow-drift 3s ease-in calc(var(--i) * 0.5s) infinite;
-	}
-	@keyframes snow-drift {
-		0% {
-			transform: translateY(-10px) translateX(0);
-			opacity: 0;
-		}
-		20% {
-			opacity: 0.6;
-		}
-		80% {
-			opacity: 0.4;
-		}
-		100% {
-			transform: translateY(110px) translateX(12px);
-			opacity: 0;
-		}
-	}
-
-	/* ─── Thunderstorm: cloud floats, lightning flashes ─── */
-	.lightning {
-		position: absolute;
-		bottom: 0;
-		left: 40px;
-		font-size: 40px;
-		animation: lightning-flash 3s ease-in-out infinite;
-		opacity: 0;
-	}
-	@keyframes lightning-flash {
-		0%,
-		100% {
-			opacity: 0;
-		}
-		10%,
-		12% {
-			opacity: 0.8;
-		}
-		11% {
-			opacity: 0.2;
-		}
-		50%,
-		52% {
-			opacity: 0.6;
-		}
-		51% {
-			opacity: 0.1;
-		}
-	}
-
-	/* shared wrapper: clip overflow from particles */
-	.weather-bg-icon {
-		overflow: visible;
-	}
-
-	/* ─── Weather room: its own space ─── */
-	.weather-room {
-		background: linear-gradient(180deg, #0d1117 0%, #111827 40%, #0f172a 100%);
-		min-height: calc(100vh - 57px); /* fill below the header bar */
-	}
-
-	/* ─── Temperature glow ─── */
-	.weather-temp-glow {
-		position: absolute;
-		width: 120px;
-		height: 120px;
-		border-radius: 50%;
-		filter: blur(40px);
-		opacity: 0.3;
-		left: -10px;
-		top: -20px;
-		animation: glow-pulse 4s ease-in-out infinite;
-	}
-	.weather-temp-glow.warm { background: radial-gradient(circle, #f59e0b, transparent); }
-	.weather-temp-glow.cold { background: radial-gradient(circle, #38bdf8, transparent); }
-	.weather-temp-glow.neutral { background: radial-gradient(circle, #94a3b8, transparent); opacity: 0.15; }
-	@keyframes glow-pulse {
-		0%, 100% { opacity: 0.2; transform: scale(1); }
-		50% { opacity: 0.4; transform: scale(1.1); }
-	}
-
-	/* ─── Sun radial glow on page bg ─── */
-	.weather-sun-glow {
-		position: absolute;
-		top: -60px;
-		right: -60px;
-		width: 300px;
-		height: 300px;
-		border-radius: 50%;
-		background: radial-gradient(circle, rgba(251, 191, 36, 0.25), transparent 70%);
-		animation: sun-glow-drift 8s ease-in-out infinite;
-		pointer-events: none;
-	}
-	@keyframes sun-glow-drift {
-		0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
-		50% { transform: translate(-20px, 15px) scale(1.1); opacity: 0.9; }
-	}
-
-	/* ─── Rain streaks across page bg ─── */
-	.weather-rain-overlay {
-		position: absolute;
-		inset: 0;
-		overflow: hidden;
-		pointer-events: none;
-	}
-	.weather-rain-streak {
-		position: absolute;
-		top: -20px;
-		left: calc(var(--i) * 5%);
-		width: 1px;
-		height: 30px;
-		background: linear-gradient(to bottom, transparent, rgba(148, 197, 233, 0.4), transparent);
-		animation: rain-streak-fall 1.2s linear calc(var(--i) * 0.1s) infinite;
-		transform: rotate(8deg);
-	}
-	@keyframes rain-streak-fall {
-		0% { transform: translateY(-30px) rotate(8deg); opacity: 0; }
-		10% { opacity: 0.6; }
-		90% { opacity: 0.3; }
-		100% { transform: translateY(calc(100vh)) rotate(8deg); opacity: 0; }
-	}
-
-	/* ─── Fog / mist overlay ─── */
-	.weather-fog {
-		position: absolute;
-		bottom: 0;
-		left: -10%;
-		width: 120%;
-		height: 40%;
-		background: linear-gradient(to top, rgba(255, 255, 255, 0.06), transparent);
-		animation: fog-drift 12s ease-in-out infinite;
-		pointer-events: none;
-		border-radius: 50% 50% 0 0;
-	}
-	@keyframes fog-drift {
-		0%, 100% { transform: translateX(0); opacity: 0.6; }
-		50% { transform: translateX(3%); opacity: 1; }
-	}
-
-	/* ─── Snow particles across page bg ─── */
-	.weather-snow-overlay {
-		position: absolute;
-		inset: 0;
-		overflow: hidden;
-		pointer-events: none;
-	}
-	.weather-snow-particle {
-		position: absolute;
-		top: -10px;
-		left: calc(var(--i) * 6.5%);
-		font-size: 8px;
-		color: rgba(224, 242, 254, 0.5);
-		animation: snow-particle-fall 4s linear calc(var(--i) * 0.3s) infinite;
-	}
-	@keyframes snow-particle-fall {
-		0% { transform: translateY(-10px) translateX(0); opacity: 0; }
-		10% { opacity: 0.7; }
-		90% { opacity: 0.4; }
-		100% { transform: translateY(500px) translateX(20px); opacity: 0; }
-	}
-
-	/* ─── Atmospheric gradient backgrounds ─── */
-	:global(.weather-page-bg) {
-		transition: background 0.6s ease;
-	}
-	:global(.weather-temp) {
-		color: white;
-		text-shadow: 0 2px 12px rgba(255, 255, 255, 0.15);
-	}
-
-	/* Clear day — warm sky */
-	:global(.weather-grad-clear-day) {
-		background: linear-gradient(135deg, #2980b9 0%, #6dd5fa 50%, #f9d423 100%);
-	}
-	/* Clear day hot — intense warm */
-	:global(.weather-grad-hot) {
-		background: linear-gradient(135deg, #f46b45 0%, #eea849 50%, #f9d423 100%);
-	}
-	/* Clear night — deep navy */
-	:global(.weather-grad-clear-night) {
-		background: linear-gradient(135deg, #0f0c29 0%, #1a1a4e 50%, #24243e 100%);
-	}
-	/* Cloudy day — muted gray-blue */
-	:global(.weather-grad-cloud-day) {
-		background: linear-gradient(135deg, #636e7b 0%, #8e9eab 50%, #a8b5c2 100%);
-	}
-	/* Cloudy night — dark slate */
-	:global(.weather-grad-cloud-night) {
-		background: linear-gradient(135deg, #1c1f26 0%, #2c3e50 50%, #3a4a5c 100%);
-	}
-	/* Rain day — steel blue */
-	:global(.weather-grad-rain-day) {
-		background: linear-gradient(135deg, #4b6584 0%, #5f7fa2 50%, #7f8fa6 100%);
-	}
-	/* Rain night — dark blue-gray */
-	:global(.weather-grad-rain-night) {
-		background: linear-gradient(135deg, #141e30 0%, #1e3044 50%, #2c3e50 100%);
-	}
-	/* Snow day — cool white-blue */
-	:global(.weather-grad-snow-day) {
-		background: linear-gradient(135deg, #83a4d4 0%, #b6cde8 50%, #d4e4f1 100%);
-	}
-	/* Snow night — dark blue */
-	:global(.weather-grad-snow-night) {
-		background: linear-gradient(135deg, #1a2a3a 0%, #2a3f54 50%, #3a5068 100%);
-	}
-	/* Storm day — dark purple */
-	:global(.weather-grad-storm-day) {
-		background: linear-gradient(135deg, #373b44 0%, #4a4e69 50%, #5c5f7a 100%);
-	}
-	/* Storm night — deep violet */
-	:global(.weather-grad-storm-night) {
-		background: linear-gradient(135deg, #0d0b1a 0%, #1a1440 50%, #2d1b69 100%);
 	}
 </style>

@@ -24,22 +24,30 @@
 
 <svelte:head>
 	<title>{appName ? `${appName} — Remini Labs` : 'Remini Labs'}</title>
-	<meta name="description" content="Remini Labs — experimental mini-apps by redstrike (Tung Nguyen), crafted with Claude Code (Opus 4.6 / Sonnet 4.6), Antigravity (Gemini 3.1 Pro). Notable everyday mini-apps: gold/silver tickers, local weather, and more." />
+	<meta
+		name="description"
+		content="Remini Labs — experimental mini-apps by redstrike (Tung Nguyen), crafted with Claude Code (Opus 4.6 / Sonnet 4.6), Antigravity (Gemini 3.1 Pro). Notable everyday mini-apps: gold/silver tickers, local weather, and more." />
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 	<meta name="theme-color" content="#0D0E14" />
 </svelte:head>
 
 <Sidebar.Provider bind:open={sidebarOpen}>
-	<AppSidebar {isHome} closeSidebar={() => sidebarOpen = false} />
+	<AppSidebar {isHome} closeSidebar={() => (sidebarOpen = false)} />
 	<Sidebar.Inset>
 		<header
 			class="sticky top-0 z-10 flex w-full items-center gap-2 border-b bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
 			<Sidebar.Trigger />
 			<div class="flex items-center gap-2 text-sm">
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<a href="/" class="flex items-center gap-2" onclick={(e) => {
-					if (isHome) { e.preventDefault(); sidebarOpen = false }
-				}}>
+				<a
+					href="/"
+					class="flex items-center gap-2"
+					onclick={(e) => {
+						if (isHome) {
+							e.preventDefault()
+							sidebarOpen = false
+						}
+					}}>
 					<img src="/favicon.png" alt="" width="18" height="18" />
 					<span class="font-semibold">Remini Labs</span>
 				</a>

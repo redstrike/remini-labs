@@ -77,6 +77,9 @@ export async function fetchServerReverseGeocode(
 	// Nominatim uses city > town > village > municipality depending on area type
 	const city: string = address.city ?? address.town ?? address.village ?? address.municipality ?? ''
 	const country: string = address.country ?? ''
+	// Ward/district for more precise location (e.g. "Hai Chau, Da Nang" instead of just "Da Nang")
+	const district: string = address.city_district ?? address.district ?? address.county ?? ''
+	const ward: string = address.quarter ?? address.suburb ?? address.neighbourhood ?? ''
 
-	return { city, country }
+	return { city, country, district, ward }
 }

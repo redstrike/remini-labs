@@ -58,6 +58,8 @@
 		</Sidebar.Group>
 	</Sidebar.Content>
 	<Sidebar.Footer>
-		<div class="p-4 text-center text-[13px] md:text-[12px] text-muted-foreground whitespace-nowrap">Crafted with ❤️ ☕ and 🤖 by redstrike</div>
+		<div class="p-4 text-center text-[13px] whitespace-nowrap text-muted-foreground md:text-[12px]">
+			Crafted with ❤️ ☕ and 🤖 by redstrike
+		</div>
 	</Sidebar.Footer>
 </Sidebar.Root>
