@@ -1,19 +1,22 @@
 # Design System — Remini Labs
 
 ## Product Context
+
 - **Brand:** Remini Labs — experimental mini-apps by redstrike (Tung Nguyen)
 - **What this is:** Collection of personal everyday tools as mini-apps
 - **Who it's for:** Personal use, everyday tools
 - **Project type:** Dark-themed, mobile-first, each mini-app is its own "room" with distinct atmosphere
-- **Mini-apps:** Tickers (gold/silver prices), Weather (local weather with atmospheric UI)
+- **Mini-apps:** Tickers (gold/silver prices + crypto charts), Weather (local weather with atmospheric UI)
 
 ## Aesthetic Direction
+
 - **Direction:** Industrial/Utilitarian with a touch of Luxury
 - **Decoration level:** Minimal — typography and data density do the work
-- **Mood:** A well-made instrument panel. Weighty, precise, not flashy. Physical precious metals, not crypto speculation.
+- **Mood:** A well-made instrument panel. Weighty, precise, not flashy. Precious metals and major crypto assets — personal portfolio tracking, not speculation.
 - **Reference sites:** TradingView (data density), CoinGecko (clean tables), Phu Quy (anti-pattern: cluttered, slow SPA)
 
 ## Typography
+
 - **Display/Prices:** Geist Mono — tabular-nums, precise, modern monospace for price numbers
 - **Body/Labels:** Geist — clean geometric sans, pairs with Geist Mono
 - **UI/Chips:** Geist at 500 weight, smaller sizes
@@ -21,19 +24,22 @@
 - **Code:** Geist Mono
 - **Loading:** Google Fonts CDN (`fonts.googleapis.com`)
 - **Scale:**
-  - Price: 24px / 700 weight / -0.5px tracking (Geist Mono) — 22px on tablet+
-  - Period change: 18px / 700 weight / -0.5px tracking (Geist Mono)
-  - Title: 16px / 600 weight / -0.2px tracking
-  - Spread: 13px / 600 weight (Geist Mono)
-  - Body: 14px / 400 weight
-  - Label: 12px / 600 weight / 0.8px tracking / uppercase
-  - OHLC values: 11px / 600 weight (Geist Mono)
-  - Chip: 10px / 500 weight
-  - Caption: 10px / 500 weight
-  - Chart axis: 10px (Geist Mono)
-  - Peak/bottom markers: 9px (Geist Mono)
+    - Crypto price: 20px / 700 weight (Geist Mono) — 18px on tablet+
+    - Metal price: 16px / 700 weight / -0.3px tracking (Geist Mono)
+    - Period change: 18px / 700 weight / -0.5px tracking (Geist Mono)
+    - Title: 16px / 600 weight / -0.2px tracking
+    - Spread: 13px / 600 weight (Geist Mono)
+    - Body: 14px / 400 weight
+    - Label: 12px / 600 weight / 0.8px tracking / uppercase
+    - OHLC values: 11px / 600 weight (Geist Mono)
+    - Metal table labels: 10px / 500 weight
+    - Caption: 10px / 500 weight
+    - Chart axis: 10px (Geist Mono)
+    - Card status text: 8px
+    - Peak/bottom markers: 9px (Geist Mono)
 
 ## Color
+
 - **Approach:** Restrained — gold and silver accents are the only color, tied to asset classes
 - **Background:** #0f0f14 — warm near-black (not pure black)
 - **Surface:** #1a1a24 — slightly lifted card background
@@ -44,23 +50,28 @@
 - **Status text:** #9a9aa6 — header status bar timestamp
 - **Muted text:** #6b6b76 — chart labels (OHLC, Candle, Interval), refresh button icon
 - **Dim text:** #4a4a56 — reserved for lowest-priority elements
-- **Gold accent:** #c9a84c — muted gold, tied to XAU asset class
-- **Silver accent:** #8a94a8 — cool steel, tied to XAG asset class
+- **Gold accent:** #d4a03a — rich gold, tied to XAU asset class
+- **Silver accent:** #a0a8b8 — lighter metallic, tied to XAG asset class
+- **BTC accent:** #e8993a — bright orange, closer to BTC brand
+- **ETH accent:** #6b7fcc — saturated blue, closer to ETH brand
+- **SOL accent:** #8a6db8 — deeper violet, closer to SOL brand
 - **Semantic:**
-  - Up: #2d9f6f (muted green)
-  - Down: #c44e4e (muted red)
-  - Spread: #d4874d (warm amber)
-  - Success: rgba(45,159,111,0.1) bg + #2d9f6f text
-  - Error: rgba(196,78,78,0.1) bg + #c44e4e text
-  - Warning: rgba(212,135,77,0.1) bg + #d4874d text
+    - Up: #2d9f6f (muted green)
+    - Down: #c44e4e (muted red)
+    - Spread: #d4874d (warm amber)
+    - Success: rgba(45,159,111,0.1) bg + #2d9f6f text
+    - Error: rgba(196,78,78,0.1) bg + #c44e4e text
+    - Warning: rgba(212,135,77,0.1) bg + #d4874d text
 - **Dark mode:** This IS the dark mode. No light mode planned.
 
 ## Spacing
+
 - **Base unit:** 4px
 - **Density:** Comfortable — not terminal-dense, not marketing-spacious
 - **Scale:** 2xs(2) xs(4) sm(8) md(16) lg(24) xl(32) 2xl(48) 3xl(64)
 
 ## Layout
+
 - **Approach:** Grid-disciplined — strict card stacking, predictable alignment
 - **Max content width:** 860px (responsive: single column on mobile, two-column cards on 640px+)
 - **Card padding:** 20px
@@ -72,6 +83,7 @@
 - **Border radius:** sm:4px (chips, badges) md:6px (buttons) lg:12px (cards) full:9999px (dots)
 
 ## App Shell / Branding
+
 - **Brand name:** Remini Labs
 - **Page title:** `{AppName} — Remini Labs` (e.g., "Tickers — Remini Labs")
 - **Meta description:** Includes AI tools used (Claude Code, Antigravity), mini-app names
@@ -82,42 +94,38 @@
 - **Mini-app rooms:** Each mini-app has its own background/atmosphere, distinct from the default app bg (#0f0f14)
 
 ## Weather App
+
 - **Room background:** Deep blue-gray gradient (`#0d1117` → `#111827` → `#0f172a`), min-height fills viewport
-- **Atmospheric gradients:** Condition-aware backgrounds on the weather content area:
-  - Clear day: `#2980b9` → `#6dd5fa` → `#f9d423` (warm sky)
-  - Clear day hot (>35°C): `#f46b45` → `#eea849` → `#f9d423` (intense warm)
-  - Clear night: `#0f0c29` → `#1a1a4e` → `#24243e` (deep navy)
-  - Cloudy day: `#636e7b` → `#8e9eab` → `#a8b5c2` (muted gray-blue)
-  - Cloudy night: `#1c1f26` → `#2c3e50` → `#3a4a5c` (dark slate)
-  - Rain day: `#4b6584` → `#5f7fa2` → `#7f8fa6` (steel blue)
-  - Rain night: `#141e30` → `#1e3044` → `#2c3e50` (dark blue-gray)
-  - Snow day: `#83a4d4` → `#b6cde8` → `#d4e4f1` (cool white-blue)
-  - Snow night: `#1a2a3a` → `#2a3f54` → `#3a5068` (dark blue)
-  - Storm day: `#373b44` → `#4a4e69` → `#5c5f7a` (dark purple)
-  - Storm night: `#0d0b1a` → `#1a1440` → `#2d1b69` (deep violet)
-- **Atmospheric CSS effects (zero images):**
-  - Sun glow: radial amber gradient, drifting, pulsing (clear day + hot)
-  - Rain streaks: 20 angled lines falling across full container (rain + storm)
-  - Fog/mist: soft white gradient rising from bottom (cloudy + rain)
-  - Snow particles: 15 dots drifting down with lateral movement
-  - Temperature glow: radial blur behind temp number — amber (warm), blue (cold), gray (neutral)
-- **Card treatment:** Frosted glass — `bg-black/20 backdrop-blur-sm` (main card), `bg-white/5 backdrop-blur-sm border-white/10` (details, forecast)
-- **Text on gradients:** White with opacity levels — city name (white), condition (white/90), feels like (white/60), coords (white/50)
-- **Animated icons:** Opacity bumped to 0.2-0.3 (from 0.12-0.18) for visibility on gradients
+- **Layout:** Single card — temperature, condition, feels-like, location. No details card, no forecast grid. Glanceable like a watch face.
+- **Card treatment:** Standard dark surface (`#1a1a24`, border `#2a2a36`, radius 12px) — matches Tickers cards. No frosted glass, no backdrop-blur.
+- **Condition accent:** 3px left border + accent-tinted temperature number. Conveys weather mood without sacrificing readability.
+    - Clear day: `#c9a84c` (gold)
+    - Hot (>35°C): `#c47a4d` (amber)
+    - Clear night: `#6b8aad` (steel blue)
+    - Cloudy: `#8a8a96` (gray)
+    - Rain: `#5b8fb9` (blue)
+    - Snow: `#9ab8d4` (ice)
+    - Storm: `#8b7bb8` (purple)
+- **Typography:** Temperature in Geist Mono 56px/700, condition 16px/600, feels-like 13px in secondary text, location 13px/500 in muted text
+- **No animations:** No atmospheric overlays, no CSS particles, no animated icons. Motion is reserved for functional transitions (spinner, pulse dot).
 - **Data source:** Open-Meteo API (free, no key, unlimited)
 
 ## Motion
+
 - **Approach:** Minimal-functional — only transitions that aid comprehension
 - **Easing:** enter(ease-out) exit(ease-in) move(ease-in-out)
 - **Duration:** micro(50-100ms) short(150ms) medium(250ms)
 - **Animations:**
-  - Price value: fade-in on refresh (150ms ease-out)
-  - Chip toggle: background+color transition (120ms ease)
-  - Card hover: background transition (150ms ease)
-  - Skeleton loading: pulse opacity 0.4-1.0 (2s infinite)
-  - Refresh dot: pulse opacity (2s infinite)
+    - Price value: fade-in on refresh (150ms ease-out)
+    - Chip toggle: background+color transition (120ms ease)
+    - Card hover: background transition (150ms ease)
+    - Skeleton loading: pulse opacity 0.4-1.0 (2s infinite)
+    - Freshness dot: 4-state pulse (fresh 3s / good 2s / aging 1.5s / stale 0.75s), colors: green #34d399 / gold #f0c850 / amber #e8993a / red #ef4444
+    - Refresh spinner: 1s default, per-source override (metals 500ms, crypto 200ms) tuned to API latency
+    - Loading overlay: progress bar (0→96% over 10s, fast-start curve) + blur(2px) + opacity(0.5), completes 90→100% + fade on data arrival
 
 ## Charts
+
 - **Library:** lightweight-charts v5 (TradingView)
 - **Type:** Candlestick (OHLC), built from intraday sell price points grouped by day
 - **Colors:** Up candles #2d9f6f, down candles #c44e4e (wick colors match)
@@ -127,68 +135,106 @@
 - **OHLC bar:** Dynamic overlay — updates on crosshair hover, shows "Latest" tag when not hovering. Values use compact M/K notation (e.g., 174.5M) with 1 decimal place.
 - **Period change:** First candle open vs last candle close, absolute (full number) + percentage
 - **Peak/bottom markers:** Custom ISeriesPrimitive — short horizontal line (12px) with price label
-  - Color: rgba(255, 255, 255, 0.5) line, rgba(255, 255, 255, 0.6) text
-  - Auto-flips left/right when label would overflow chart edge
+    - Color: rgba(255, 255, 255, 0.5) line, rgba(255, 255, 255, 0.6) text
+    - Auto-flips left/right when label would overflow chart edge
 - **Candle sizes:** 1D, 3D, 1W — grouped by bucket key (epoch days mod N)
 - **Durations:** 7D, 15D, 30D (API: 1M), 90D (API: 3M), 180D (API: 6M), 1Y (API: 1Y). Always fetches 1Y per asset; shorter durations are sliced client-side.
 - **Candle width scaling:** Explicit barSpacing, never fitContent(). Tier-based system with 6 tiers (7D→15D→30D→90D→180D→1Y), stepping down per interval:
-  - Mobile (standard=10px, step=1px): 12→11→10→9→8→7 (1D), 13→12→11→10→9→8 (3D), 14→13→12→11→10→9 (1W)
-  - Desktop (standard=17px, step=2px): 21→19→17→15→13→11 (1D), 23→21→19→17→15→13 (3D), 25→23→21→19→17→15 (1W)
-  - Candle size bonus: 1D=0, 3D=+1×step, 1W=+2×step
-  - Tier thresholds use 1D-equivalent candle count (numCandles × sizeFactor) to keep tier stable across candle sizes
+    - Mobile (standard=10px, step=1px): 12→11→10→9→8→7 (1D), 13→12→11→10→9→8 (3D), 14→13→12→11→10→9 (1W)
+    - Desktop (standard=17px, step=2px): 21→19→17→15→13→11 (1D), 23→21→19→17→15→13 (3D), 25→23→21→19→17→15 (1W)
+    - Candle size bonus: 1D=0, 3D=+1×step, 1W=+2×step
+    - Tier thresholds use 1D-equivalent candle count (numCandles × sizeFactor) to keep tier stable across candle sizes
 - **Caching:** Client-side Map with 30-min TTL, keyed by asset (always 1Y data)
 
 ## Data Architecture
+
 - **Source:** Phu Quy backend API (`be.phuquy.com.vn`), proxied via SvelteKit API routes
 - **Fetch:** `globalThis.fetch` (not `event.fetch` — Phu Quy blocks SvelteKit origin headers)
 - **Timeout:** 5s AbortController on all upstream calls
-- **Server cache:** Cloudflare Cache API with X-Cached-At header for TTL enforcement (60s fresh, 300s stale fallback)
+- **Server cache (metals):** Cloudflare Cache API, 60s fresh / 300s stale fallback
+- **Server cache (crypto):** 10s debounce only (dedup rapid-fire requests), no stale fallback — fresh data or 502 error
 - **Clock sync:** Transparent service (`src/lib/clock-sync.ts`) patches Date.now() and new Date() globally. Initial sync via SSR serverTime (10s drift threshold), re-sync every 15 min via /api/clock using NTP-lite (round-trip compensated).
-- **Client polling:** 15-min interval, guarded with `browser` check for SSR safety
-- **Gold prices:** Summary API provides native luong/chi prices (not chi×10 conversion)
-- **Silver prices:** API returns VND/chi; multiply by 266.667 for VND/kg (1kg = 266.667 chi)
-- **Silver filter:** Excludes BM1OZ and "miếng" (mỹ nghệ) items, sorts kg first then lượng
-- **Stale indicator:** Green dot = last fetch succeeded, amber dot = fetch failed (showing cached data). Status shows relative time ("Just now", "2 mins ago") with fallback to absolute date (en-GB format + UTC+7) after 24h. Tap to toggle between fetch time and source data time.
-- **Time format:** en-GB Intl.DateTimeFormat, fixed to Asia/Ho_Chi_Minh timezone, appended with UTC+7
+- **Client polling:** Metals 15 min, crypto 5 min (separate intervals)
+- **Visibility fetch:** On tab resume, fetch both sources if last fetch > 10s ago (per-source debounce)
+- **Gold prices:** Table API provides per-chỉ prices, × 10 for per-lượng. Both units shown in compact table.
+- **Silver prices:** Table API provides per-unit prices. Sorted small unit first (lượng → kg).
+- **Silver filter:** Excludes BM1OZ and "miếng" (mỹ nghệ) items
+- **Freshness indicator:** 4-state FreshnessDot component (fresh/good/aging/stale) based on elapsed time vs poll interval. Dot color + pulse speed change as data ages. Per-card refresh button with spinner driven by event bus.
+- **Event bus:** Typed event bus per mini-app. Data layer emits `fetching`/`fetched` events, UI subscribes and manages spinner state independently. Error-isolated, Set-dedup, snapshot iteration.
+- **VND formatting:** No fractional digits (1 VND is negligibly small)
+- **USDT formatting:** Tiered precision — <100: 2dp, 100-999: 1dp, >=1000: 0dp
+
+## Crypto Data
+
+- **Source:** Binance public API (`api.binance.com/api/v3`), no API key needed
+- **Symbols:** BTCUSDT, ETHUSDT, SOLUSDT
+- **Price display:** USDT (tiered precision: <100 → 2dp, 100-999 → 1dp, >=1000 → 0dp)
+- **Spots endpoint:** `/tickers/api/spots/crypto` — batch fetch all 3 symbols via Binance `/ticker/24hr`
+- **Charts endpoint:** `/tickers/api/charts/crypto?symbol=X` — daily OHLC candles via Binance `/klines`
+- **Server cache:** 10s debounce only, no stale fallback
+- **Chart data:** Pre-built OHLC candles (not raw points) — `ChartData.candles` field
+- **Duration:** Always fetch 365 daily candles (1Y), slice client-side like metals
+- **Candle aggregation:** 3D/1W merge pre-built 1D candles (first open, last close, max high, min low)
+- **Layout:** Tabbed card (BTC/ETH/SOL) alongside metals card, side-by-side on tablet+
+- **Accent colors:** Per-coin brand colors (BTC #e8993a, ETH #6b7fcc, SOL #8a6db8)
 
 ## Decisions Log
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| 2026-03-31 | Initial design system created | /design-consultation based on competitive research (TradingView, CoinGecko, crypto dashboards) |
-| 2026-03-31 | Geist + Geist Mono over Inter/Roboto | Crisper rendering, superior mono pairing, not overused in financial space |
-| 2026-03-31 | Muted gold/silver accents over neon | Asset-class-tied colors. Physical metals, not crypto speculation |
-| 2026-03-31 | Warm near-black #0f0f14 over pure #000 | Easier on eyes for morning use. Feels crafted, not default dark mode |
-| 2026-04-01 | Google Fonts CDN over jsdelivr | jsdelivr doesn't host Geist package; Google Fonts is reliable |
-| 2026-04-01 | globalThis.fetch over event.fetch | Phu Quy API returns 403 when SvelteKit's origin headers are present |
-| 2026-04-01 | Cloudflare Cache API over in-memory cache | Module-level variables reset on Worker cold starts |
-| 2026-04-01 | 180D uses 1Y data filtered client-side | Phu Quy's 6M API endpoint returns only ~1 week of data (broken) |
-| 2026-04-01 | Summary API for gold luong prices | chi×10 ≠ luong price; summary API has native luong/chi values |
-| 2026-04-01 | 860px max-width with responsive grid | Two-column card layout on tablet+, single column on mobile |
-| 2026-04-01 | Fetch-based stale detection over time-based | Simpler: green = fetch OK, amber = fetch failed showing cached data |
-| 2026-04-01 | 15-min polling interval | Phu Quy updates a few times per hour; 5-min was overkill for personal dashboard |
-| 2026-04-03 | Chart section full-bleed on mobile | Negative margins to cancel parent padding, recovers horizontal space for chart |
-| 2026-04-03 | Two-tone chart section: #1a1a24 tab row + #121218 body | Visual separation between asset tabs and chart content |
-| 2026-04-03 | 14D → 15D duration | Rounder number, feels more natural |
-| 2026-04-03 | Always-1Y fetch + client-side slicing for all durations | One fetch per asset, instant duration switching |
-| 2026-04-03 | Explicit barSpacing over fitContent() | fitContent overrides barSpacing, making candle widths unpredictable across candle sizes |
-| 2026-04-03 | Tier-based candle width with additive size bonus | Linear 1px/2px steps feel predictable; multiplicative scaling caused jarring width jumps |
-| 2026-04-03 | OHLC compact M/K notation | Saves horizontal space, faster to parse at a glance |
-| 2026-04-03 | autoSize: true for chart container | Lets lightweight-charts manage its own ResizeObserver, fixing price scale alignment |
-| 2026-04-03 | X-Cached-At header for cache TTL | Cloudflare Cache API ignores Cache-Control for cache.match(); manual TTL check needed |
-| 2026-04-03 | Transparent clock sync via Date.now() patch | Zero-effort DX: developers use Date.now() normally, clock sync is invisible |
-| 2026-04-03 | 10s drift threshold for initial sync | Absorbs slow mobile network latency without false-triggering server fallback |
-| 2026-04-03 | NTP-lite for background re-sync | Round-trip compensated for ~50ms accuracy, runs every 15 min via /api/clock |
-| 2026-04-03 | 60-minute stale threshold | Phu Quy updates irregularly; 30 min caused false amber during normal upstream gaps |
-| 2026-04-03 | en-GB locale for date formatting | vi-VN outputs time-first; en-GB gives dd/mm/yyyy date-first as expected |
-| 2026-04-03 | Relative time with absolute fallback | "2 mins ago" for fresh data, full date after 24h for stale |
-| 2026-04-03 | Tap-to-toggle for source time | Desktop has title tooltip; mobile needs tap since no hover exists |
-| 2026-04-03 | Bumped text colors: #4a4a56→#6b6b76, #6b6b76→#8a8a96 | Improved readability on dark backgrounds without losing visual hierarchy |
-| 2026-04-03 | Rebrand to "Remini Labs" | Umbrella brand for all mini-apps, consistent in titles, sidebar, meta |
-| 2026-04-03 | Sidebar brand in Header slot + breadcrumb nav | Brand at top of sidebar, header shows "Remini Labs › Tickers" on all screens |
-| 2026-04-03 | Home links collapse sidebar when on home | Avoids unnecessary navigation; improves mobile UX |
-| 2026-04-03 | Each mini-app is its own "room" | Distinct atmosphere per app; navigating feels like entering a new space |
-| 2026-04-03 | Weather atmospheric gradients over static images | CSS gradients age better, zero bundle cost, no maintenance |
-| 2026-04-03 | CSS particle effects (rain, snow, fog, glow) over images | Same atmospheric feel, zero asset loading, easy to tune |
-| 2026-04-03 | Frosted glass cards on weather gradients | Cards float above atmosphere; data stays readable on any gradient |
-| 2026-04-03 | Weather room deep blue-gray bg | Distinct from default app bg (#0f0f14); hints at sky before data loads |
-| 2026-04-03 | Open-Meteo over alternatives | Free, no API key, unlimited calls, accurate ECMWF/GFS models |
+
+| Date       | Decision                                                 | Rationale                                                                                                                                                         |
+| ---------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-03-31 | Initial design system created                            | /design-consultation based on competitive research (TradingView, CoinGecko, crypto dashboards)                                                                    |
+| 2026-03-31 | Geist + Geist Mono over Inter/Roboto                     | Crisper rendering, superior mono pairing, not overused in financial space                                                                                         |
+| 2026-03-31 | Muted gold/silver accents over neon                      | Asset-class-tied colors. Physical metals, not crypto speculation                                                                                                  |
+| 2026-03-31 | Warm near-black #0f0f14 over pure #000                   | Easier on eyes for morning use. Feels crafted, not default dark mode                                                                                              |
+| 2026-04-01 | Google Fonts CDN over jsdelivr                           | jsdelivr doesn't host Geist package; Google Fonts is reliable                                                                                                     |
+| 2026-04-01 | globalThis.fetch over event.fetch                        | Phu Quy API returns 403 when SvelteKit's origin headers are present                                                                                               |
+| 2026-04-01 | Cloudflare Cache API over in-memory cache                | Module-level variables reset on Worker cold starts                                                                                                                |
+| 2026-04-01 | 180D uses 1Y data filtered client-side                   | Phu Quy's 6M API endpoint returns only ~1 week of data (broken)                                                                                                   |
+| 2026-04-01 | Gold prices from table API (chi × 10 = lượng)            | Summary API (`/get-price`) is dead upstream; table API has all needed data                                                                                        |
+| 2026-04-01 | 860px max-width with responsive grid                     | Two-column card layout on tablet+, single column on mobile                                                                                                        |
+| 2026-04-01 | Time-based freshness with 4 states                       | FreshnessDot: green/gold/amber/red based on elapsed vs TTL. Battery-like HP drain metaphor                                                                       |
+| 2026-04-01 | Split polling: metals 15min, crypto 5min                 | Metals prices move slowly; crypto needs fresher data. Visibility fetch on tab resume for both                                                                     |
+| 2026-04-03 | Chart section full-bleed on mobile                       | Negative margins to cancel parent padding, recovers horizontal space for chart                                                                                    |
+| 2026-04-03 | Two-tone chart section: #1a1a24 tab row + #121218 body   | Visual separation between asset tabs and chart content                                                                                                            |
+| 2026-04-03 | 14D → 15D duration                                       | Rounder number, feels more natural                                                                                                                                |
+| 2026-04-03 | Always-1Y fetch + client-side slicing for all durations  | One fetch per asset, instant duration switching                                                                                                                   |
+| 2026-04-03 | Explicit barSpacing over fitContent()                    | fitContent overrides barSpacing, making candle widths unpredictable across candle sizes                                                                           |
+| 2026-04-03 | Tier-based candle width with additive size bonus         | Linear 1px/2px steps feel predictable; multiplicative scaling caused jarring width jumps                                                                          |
+| 2026-04-03 | OHLC compact M/K notation                                | Saves horizontal space, faster to parse at a glance                                                                                                               |
+| 2026-04-03 | autoSize: true for chart container                       | Lets lightweight-charts manage its own ResizeObserver, fixing price scale alignment                                                                               |
+| 2026-04-03 | X-Cached-At header for cache TTL                         | Cloudflare Cache API ignores Cache-Control for cache.match(); manual TTL check needed                                                                             |
+| 2026-04-03 | Transparent clock sync via Date.now() patch              | Zero-effort DX: developers use Date.now() normally, clock sync is invisible                                                                                       |
+| 2026-04-03 | 10s drift threshold for initial sync                     | Absorbs slow mobile network latency without false-triggering server fallback                                                                                      |
+| 2026-04-03 | NTP-lite for background re-sync                          | Round-trip compensated for ~50ms accuracy, runs every 15 min via /api/clock                                                                                       |
+| 2026-04-03 | 60-minute stale threshold                                | Phu Quy updates irregularly; 30 min caused false amber during normal upstream gaps                                                                                |
+| 2026-04-03 | en-GB locale for date formatting                         | vi-VN outputs time-first; en-GB gives dd/mm/yyyy date-first as expected                                                                                           |
+| 2026-04-03 | Relative time with absolute fallback                     | "2 mins ago" for fresh data, full date after 24h for stale                                                                                                        |
+| 2026-04-03 | Tap-to-toggle for source time                            | Desktop has title tooltip; mobile needs tap since no hover exists                                                                                                 |
+| 2026-04-03 | Bumped text colors: #4a4a56→#6b6b76, #6b6b76→#8a8a96     | Improved readability on dark backgrounds without losing visual hierarchy                                                                                          |
+| 2026-04-03 | Rebrand to "Remini Labs"                                 | Umbrella brand for all mini-apps, consistent in titles, sidebar, meta                                                                                             |
+| 2026-04-03 | Sidebar brand in Header slot + breadcrumb nav            | Brand at top of sidebar, header shows "Remini Labs › Tickers" on all screens                                                                                      |
+| 2026-04-03 | Home links collapse sidebar when on home                 | Avoids unnecessary navigation; improves mobile UX                                                                                                                 |
+| 2026-04-03 | Each mini-app is its own "room"                          | Distinct atmosphere per app; navigating feels like entering a new space                                                                                           |
+| 2026-04-03 | Weather atmospheric gradients over static images         | CSS gradients age better, zero bundle cost, no maintenance                                                                                                        |
+| 2026-04-03 | CSS particle effects (rain, snow, fog, glow) over images | Same atmospheric feel, zero asset loading, easy to tune                                                                                                           |
+| 2026-04-03 | Frosted glass cards on weather gradients                 | Cards float above atmosphere; data stays readable on any gradient                                                                                                 |
+| 2026-04-03 | Weather room deep blue-gray bg                           | Distinct from default app bg (#0f0f14); hints at sky before data loads                                                                                            |
+| 2026-04-03 | Open-Meteo over alternatives                             | Free, no API key, unlimited calls, accurate ECMWF/GFS models                                                                                                      |
+| 2026-04-04 | Add crypto (BTC, ETH, SOL) from Binance                  | Personal portfolio tracking; Binance for personal context, public API no key needed                                                                               |
+| 2026-04-04 | Per-coin vivid accent colors                             | BTC #e8993a, ETH #6b7fcc, SOL #8a6db8 — closer to native brand colors, distinct at small sizes                                                                   |
+| 2026-04-04 | Pre-built OHLC candles for crypto                        | Binance provides daily OHLC directly — more accurate than reconstructing from ticks                                                                               |
+| 2026-04-04 | Tabbed cards: metals + crypto side by side                | Compact layout; tabs within cards for asset switching                                                                                                              |
+| 2026-04-04 | USDT price display                                       | Standard crypto convention; matches Binance data directly, no exchange rate needed                                                                                |
+| 2026-04-04 | Configurable chart price formatter                       | USD vs VND formatting via prop; chart component stays currency-agnostic                                                                                           |
+| 2026-04-04 | Weather rework: accent bar over atmospheric gradients    | Bright gradients + particle effects killed readability on mobile/daylight. Accent-colored left border + tinted temp preserves condition awareness on dark surface |
+| 2026-04-04 | Remove Details + 7-day forecast cards                    | Low-value data for a glanceable weather app. Single card with temp/condition/feels-like/location is enough                                                        |
+| 2026-04-04 | Weather scoped CSS over shadcn Card components           | Matches Tickers pattern, consistent surface colors, no backdrop-blur fragility                                                                                    |
+| 2026-04-05 | API route restructure: /spots + /charts                  | Symmetric naming: `/api/spots/{metals,crypto}` for live prices, `/api/charts/{metals,crypto}` for historical                                                     |
+| 2026-04-05 | Remove dead Phu Quy /get-price endpoint                  | Upstream returns empty data; gold now uses table API (chi × 10 for lượng)                                                                                        |
+| 2026-04-05 | Crypto server cache: 10s debounce, no stale fallback     | Single user app; prefer fresh data or error over stale. Debounce prevents hammering Binance                                                                      |
+| 2026-04-05 | Event bus for fetch state decoupling                      | Data layer emits events, UI subscribes. Spinner state owned by page, not data layer                                                                               |
+| 2026-04-05 | FreshnessDot: 4-state battery-like indicator              | Green/gold/amber/red with accelerating pulse. 6px circle. Reusable component                                                                                     |
+| 2026-04-05 | LoadingOverlay: reusable progress bar + blur              | Extracted from tickers chart. 1px progress line, asset-accent colored                                                                                             |
+| 2026-04-05 | Compact metal table: all units in one view               | Buy/Sell columns with unit rows (Chỉ/Lượng), spread row with / separator. No sub-tabs                                                                            |
+| 2026-04-05 | SSR chart cache warmup (fire-and-forget)                 | Start chart fetch during SSR but don't await — progressive loading feels faster than blocking                                                                     |
+| 2026-04-05 | verbatimModuleSyntax enabled                             | Required for TypeScript 7 (Go rewrite). SvelteKit supports it natively                                                                                           |

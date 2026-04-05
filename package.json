@@ -1,6 +1,6 @@
 {
 	"name": "remini-labs",
-	"version": "0.5.0",
+	"version": "0.10.0",
 	"private": true,
 	"description": "Remini Labs: A monorepo of experimental mini-apps developed by Tung Nguyen (redstrike), utilizing AI-assisted software development as the core approach.",
 	"license": "MIT",
@@ -20,20 +20,23 @@
 		"lint": "oxlint",
 		"lint:fix": "oxlint --fix"
 	},
+	"dependencies": {
+		"lightweight-charts": "^5.1.0"
+	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20260402.1",
+		"@cloudflare/workers-types": "^4.20260405.1",
 		"@internationalized/date": "^3.12.0",
 		"@lucide/svelte": "^1.7.0",
 		"@playwright/test": "^1.59.1",
 		"@sveltejs/adapter-cloudflare": "^7.2.8",
-		"@sveltejs/kit": "^2.55.0",
+		"@sveltejs/kit": "^2.56.1",
 		"@sveltejs/mcp": "^0.1.22",
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
 		"@tailwindcss/vite": "^4.2.2",
-		"@types/node": "^25.5.0",
+		"@types/node": "^25.5.2",
 		"@vitejs/plugin-basic-ssl": "^2.3.0",
 		"autoprefixer": "^10.4.27",
-		"bits-ui": "^2.16.5",
+		"bits-ui": "^2.17.2",
 		"clsx": "^2.1.1",
 		"oxfmt": "^0.43.0",
 		"oxlint": "^1.58.0",
@@ -50,12 +53,10 @@
 		"typescript": "^6.0.2",
 		"valibot": "^1.3.1",
 		"vite": "^8.0.3",
-		"wrangler": "^4.79.0"
+		"vitest": "^4.1.2",
+		"wrangler": "^4.80.0"
 	},
 	"engines": {
 		"node": ">=24.14.0"
-	},
-	"dependencies": {
-		"lightweight-charts": "^5.1.0"
 	}
 }
