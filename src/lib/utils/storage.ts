@@ -34,4 +34,16 @@ export const asyncStorage = {
 			console.warn(`Failed to remove from asyncStorage[${key}]:`, e)
 		}
 	},
+
+	async keys(prefix?: string): Promise<string[]> {
+		try {
+			if (typeof window === 'undefined') return []
+			const all = Object.keys(window.localStorage)
+			return prefix ? all.filter((k) => k.startsWith(prefix)) : all
+		} catch (e) {
+			console.warn(`Failed to enumerate asyncStorage keys:`, e)
+			return []
+		}
+	},
+
 }

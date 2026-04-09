@@ -81,6 +81,5 @@ function patchDate() {
 		},
 	})
 
-	// @ts-expect-error — replacing global Date
 	globalThis.Date = PatchedDate
 }

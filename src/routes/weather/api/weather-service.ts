@@ -54,7 +54,7 @@ export async function fetchServerReverseGeocode(
 	lat: string | null,
 	lng: string | null,
 	fetchFn: typeof fetch = fetch,
-): Promise<{ city: string; country: string }> {
+): Promise<{ city: string; country: string; district: string; ward: string }> {
 	if (!lat || !lng) {
 		throw new Error('lat and lng query params are required')
 	}

@@ -13,7 +13,7 @@
 		Monitor,
 	} from '@lucide/svelte'
 
-	const weather = useWeather(true)
+	const weather = useWeather({ useRemoteFns: true })
 
 	import { browser } from '$app/environment'
 
@@ -164,14 +164,23 @@
 							</div>
 
 							<div class="weather-location">
-								{#if weather.isApproxLocation && weather.ipCity}
+								{#if weather.gpsCity}
+									<!-- Precise reverse-geocoded label wins. Keep the Approximate
+									     badge when we're still on the IP fallback path so the user
+									     understands the lat/lng underlying this label is coarse. -->
+									<span>{weather.gpsCity}</span>
+									{#if weather.isApproxLocation}
+										<span class="weather-approx">
+											<TriangleAlert size={11} />
+											Approximate{weather.ipIsp ? ` · ${weather.ipIsp}` : ''}
+										</span>
+									{/if}
+								{:else if weather.isApproxLocation && weather.ipCity}
 									<span>{weather.ipCity}</span>
 									<span class="weather-approx">
 										<TriangleAlert size={11} />
 										Approximate{weather.ipIsp ? ` · ${weather.ipIsp}` : ''}
 									</span>
-								{:else if weather.gpsCity}
-									<span>{weather.gpsCity}</span>
 								{:else}
 									<span class="weather-coords">
 										{weatherInfo.lat.toFixed(4)}, {weatherInfo.lng.toFixed(4)}
@@ -474,6 +483,11 @@
 		border-left: 3px solid var(--accent, #8a8a96);
 		border-radius: 12px;
 		padding: var(--card-padding);
+		/* Cap at big-phone width (iPhone 17 Pro Max ≈ 440px) so the card doesn't stretch
+		   across tablet/laptop/desktop. Phones fill their container since max-width
+		   only kicks in beyond 440px. */
+		max-width: 440px;
+		margin-inline: auto;
 	}
 
 	/* ─── Grid ─── */

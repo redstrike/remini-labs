@@ -1,18 +1,67 @@
-import { asyncStorage } from '$lib/utils/storage'
+import { createCache } from '$lib/utils/cache'
 import { Sun, Cloud, CloudRain, Snowflake } from '@lucide/svelte'
 import { onMount } from 'svelte'
 
 import { getIpLocationRemote, getReverseGeocodeRemote } from './weather.remote'
 
-const FRESHNESS_THRESHOLD = 15 * 60 * 1000 // 15 minutes in ms
+const weatherCache = createCache<WeatherAppCache>('weather', {
+	ttl: 15 * 60 * 1000, // 15 min — single hard TTL, no soft-refresh ladder
+})
+
+// Geocode results are effectively immutable (ward boundaries don't change) — long TTL.
+// The dict is capped to GEOCODE_MAX_ENTRIES via LRU (lastAccessedAt) to keep the blob small.
+const geocodesCache = createCache<Record<string, GeocodeEntry>>('weather.geocodes', {
+	ttl: 90 * 24 * 60 * 60 * 1000, // 90 days — nuke-all safety net, not per-entry freshness
+})
+const GEOCODE_MAX_ENTRIES = 5
+
+function geocodeKey(lat: number, lng: number) {
+	// 3 decimals ≈ 110m precision — one cache entry per ~ward-sized bucket
+	return `${lat.toFixed(3)}_${lng.toFixed(3)}`
+}
+
+async function lookupGeocode(lat: number, lng: number): Promise<GeocodeEntry | null> {
+	const dict = await geocodesCache.get()
+	if (!dict) return null
+	const key = geocodeKey(lat, lng)
+	const entry = dict[key]
+	if (!entry) return null
+	// Touch LRU timestamp on read, persist so eviction order reflects actual usage
+	entry.lastAccessedAt = Date.now()
+	await geocodesCache.set(dict)
+	return entry
+}
+
+async function saveGeocode(
+	lat: number,
+	lng: number,
+	data: { city: string; country: string; district?: string; ward?: string; label: string },
+) {
+	const dict = (await geocodesCache.get()) ?? {}
+	const key = geocodeKey(lat, lng)
+	dict[key] = { ...data, lastAccessedAt: Date.now() }
+
+	// LRU eviction — keep only the N most recently accessed entries
+	const keys = Object.keys(dict)
+	if (keys.length > GEOCODE_MAX_ENTRIES) {
+		const sorted = keys.sort((a, b) => dict[a].lastAccessedAt - dict[b].lastAccessedAt)
+		for (const k of sorted.slice(0, keys.length - GEOCODE_MAX_ENTRIES)) delete dict[k]
+	}
+
+	await geocodesCache.set(dict)
+}
 
 // --- Hook / State Module ---
 
-export function useWeather(useRemoteFns = false) {
+export interface UseWeatherOptions {
+	/** Use SvelteKit experimental remote functions instead of REST API endpoints. */
+	useRemoteFns?: boolean
+}
+
+export function useWeather({ useRemoteFns = false }: UseWeatherOptions = {}) {
 	let loadingState = $state<'idle' | 'locating' | 'fetching'>('locating')
 	let locationError = $state<string | null>(null)
-	let cachedWeather = $state<WeatherCacheItem | null>(null)
-	let liveWeather = $state<WeatherCacheItem | null>(null)
+	let liveWeather = $state<WeatherData | null>(null)
 	let now = $state(Date.now())
 	let permissionState = $state<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown')
 	let isApproxLocation = $state(false)
@@ -20,15 +69,19 @@ export function useWeather(useRemoteFns = false) {
 	let ipIsp = $state<string>('') // ISP name from IP geolocation
 	let gpsCity = $state<string>('') // reverse-geocoded label for GPS location
 
-	// Load cache, check permission, and trigger initial location request
 	onMount(async () => {
-		const cached = await asyncStorage.getItem<WeatherCacheItem>('weather_cache')
+		// Hydrate from cache first — if fresh, we can skip the network entirely.
+		// getCachedItem auto-removes expired entries so we never see stale data.
+		const cached = await weatherCache.get()
 		if (cached) {
-			cachedWeather = cached
-			if (cached.locationLabel) gpsCity = cached.locationLabel
+			liveWeather = { lat: cached.lat, lng: cached.lng, timestamp: cached.fetchedAt, weather: cached.weather }
+			gpsCity = cached.gpsCity ?? ''
+			isApproxLocation = cached.isApproxLocation
+			ipCity = cached.ipCity ?? null
+			ipIsp = cached.ipIsp ?? ''
+			loadingState = 'idle'
 		}
 
-		// Query initial permission state and subscribe to changes
 		if ('permissions' in navigator) {
 			try {
 				const status = await navigator.permissions.query({ name: 'geolocation' })
@@ -37,7 +90,6 @@ export function useWeather(useRemoteFns = false) {
 				// Reactively update permission state if user changes it in browser settings
 				status.onchange = () => {
 					permissionState = status.state
-					// If user just granted permission, trigger a real GPS fetch
 					if (status.state === 'granted') {
 						isApproxLocation = false
 						ipCity = null
@@ -47,59 +99,22 @@ export function useWeather(useRemoteFns = false) {
 					}
 				}
 			} catch {
-				// Permissions API not supported or blocked — fall through to requestLocation()
 				permissionState = 'unknown'
 			}
 		}
 
-		if (cachedWeather) {
-			// Have cached location — skip GPS, just refresh weather if stale
-			loadingState = 'idle'
-			const isStale = Date.now() - cachedWeather.timestamp >= FRESHNESS_THRESHOLD
-			if (isStale) {
-				// Silently refresh weather using cached lat/lng, then check if user changed ward
-				fetchWeatherData(cachedWeather.lat, cachedWeather.lng).then(async () => {
-					if (permissionState !== 'granted') return
-					try {
-						const pos = await getUserLocation()
-						const { latitude, longitude } = pos.coords
-						// Reverse geocode the new position and compare with cached
-						const newGeo = await fetchReverseGeocode(latitude, longitude)
-						const oldGeo = cachedWeather.geo
-						if (newGeo && oldGeo) {
-							const wardChanged = newGeo.ward !== oldGeo.ward
-							const cityChanged = newGeo.city !== oldGeo.city
-							if (wardChanged || cityChanged) {
-								// User moved to a different area — re-fetch weather
-								fetchWeatherData(latitude, longitude)
-							}
-						}
-						// Update the display label regardless
-						const detail = [newGeo?.ward, newGeo?.district].filter(Boolean).join(', ')
-						if (detail && newGeo?.city) {
-							gpsCity = `${detail}, ${newGeo.city}`
-						} else if (newGeo) {
-							gpsCity = [newGeo.city, newGeo.country].filter(Boolean).join(', ')
-						}
-					} catch {
-						/* GPS failed silently — cached location is fine */
-					}
-				})
-			}
+		// If we hydrated from fresh cache, don't re-fetch. Otherwise run the full flow.
+		if (cached) return
+
+		if (permissionState === 'denied') {
+			await requestIpLocationFallback()
 		} else {
-			// No cache at all (first visit) — need GPS to get initial location
-			if (permissionState === 'denied') {
-				await requestIpLocationFallback()
-			} else {
-				await requestLocation()
-			}
+			await requestLocation()
 		}
 	})
 
 	$effect(() => {
-		// Only run the ticker if we actually have data to compute relative time for
-		if (!liveWeather && !cachedWeather) return
-
+		if (!liveWeather) return
 		const interval = setInterval(() => {
 			now = Date.now()
 		}, 60000) // update every minute
@@ -110,23 +125,30 @@ export function useWeather(useRemoteFns = false) {
 		loadingState = 'fetching'
 		try {
 			const weatherData = await fetchOpenMeteoForecast(lat, lng)
-
-			const newWeather: WeatherCacheItem = {
-				lat,
-				lng,
-				timestamp: Date.now(),
-				weather: weatherData,
-				locationLabel: gpsCity || undefined,
-			}
-			liveWeather = newWeather
-
-			await asyncStorage.setItem('weather_cache', newWeather)
+			liveWeather = { lat, lng, timestamp: Date.now(), weather: weatherData }
+			await persistCache()
 		} catch (e) {
 			console.error('Failed to fetch weather', e)
 			locationError = 'Failed to fetch the latest weather data.'
 		} finally {
 			loadingState = 'idle'
 		}
+	}
+
+	// Snapshot current state into the single per-mini-app cache key.
+	// Called after weather lands and again after reverse-geocode resolves the label.
+	async function persistCache() {
+		if (!liveWeather) return
+		await weatherCache.set({
+			lat: liveWeather.lat,
+			lng: liveWeather.lng,
+			weather: liveWeather.weather,
+			fetchedAt: liveWeather.timestamp,
+			gpsCity: gpsCity || undefined,
+			isApproxLocation,
+			ipCity,
+			ipIsp,
+		})
 	}
 
 	async function requestIpLocationFallback() {
@@ -138,6 +160,9 @@ export function useWeather(useRemoteFns = false) {
 			ipCity = ipLocation.city
 			ipIsp = ipLocation.isp
 			loadingState = 'idle'
+			// Reverse geocode in the background so users on the IP fallback path also get
+			// a proper "Ward, District, City" label instead of just the coarse IP city.
+			reverseGeocode(ipLocation.lat, ipLocation.lng)
 			await fetchWeatherData(ipLocation.lat, ipLocation.lng)
 		} catch (e: any) {
 			console.error('IP location fallback failed:', e)
@@ -146,67 +171,43 @@ export function useWeather(useRemoteFns = false) {
 		}
 	}
 
-	// Raw reverse geocode fetch — returns geo data without side effects
-	async function fetchReverseGeocode(lat: number, lng: number): Promise<GeoInfo | null> {
+	// Reverse geocode GPS coordinates in the background — sets gpsCity, never blocks weather load.
+	// Uses the persistent LRU geocode dict (weather.geocodes.cache) to skip the network when
+	// the user is in a previously-visited area.
+	async function reverseGeocode(lat: number, lng: number) {
+		// Fast path: cached geocode for this rounded coordinate
+		const cached = await lookupGeocode(lat, lng)
+		if (cached) {
+			gpsCity = cached.label
+			await persistCache()
+			return
+		}
+
 		try {
 			let data: { city: string; country: string; district?: string; ward?: string }
 			if (useRemoteFns) {
-				data = await getReverseGeocodeRemote({ lat, lng })
+				// Outside a reactive context (.svelte.ts), `await query(...)` throws
+				// "not created in a reactive context". Use `.run()` for one-shot fetch.
+				// https://svelte.dev/docs/kit/remote-functions#query
+				data = await getReverseGeocodeRemote({ lat, lng }).run()
 			} else {
 				const res = await fetch(`/weather/api/reverse-geocode?lat=${lat}&lng=${lng}`)
-				if (!res.ok) return null
+				if (!res.ok) return
 				data = await res.json()
 			}
-			return data
-		} catch {
-			return null
-		}
-	}
-
-	// Reverse geocode GPS coordinates in the background — sets gpsCity, never blocks weather load.
-	// Caches the result in localStorage keyed by rounded lat/lng (3 decimal places ≈ 110m precision).
-	async function reverseGeocode(lat: number, lng: number, skipCache: boolean = false) {
-		const cacheKey = `geocode_${lat.toFixed(3)}_${lng.toFixed(3)}`
-
-		// Try cache first — avoid slow Nominatim call if location hasn't changed
-		if (!skipCache) {
-			try {
-				const cached = await asyncStorage.getItem<{ label: string; timestamp: number }>(cacheKey)
-				if (cached && Date.now() - cached.timestamp < 24 * 60 * 60 * 1000) {
-					gpsCity = cached.label
-					return
-				}
-			} catch {
-				/* proceed to fetch */
-			}
-		}
-
-		try {
-			const data = await fetchReverseGeocode(lat, lng)
-			if (!data) return
-			// Build detailed label: "Ward, District, City" or fallback to "City, Country"
-			const detail = [data.ward, data.district].filter(Boolean).join(', ')
-			let label: string
-			if (detail && data.city) {
-				label = `${detail}, ${data.city}`
-			} else {
-				label = [data.city, data.country].filter(Boolean).join(', ')
-			}
+			// Two-token label, most-specific first: "Ward, District" → "District, City" → "City, Country"
+			const label = buildLocationLabel(data)
 			gpsCity = label
-			await asyncStorage.setItem(cacheKey, { label, timestamp: Date.now() })
-			// Persist label + geo into weather cache so next load has it
-			const current = liveWeather || cachedWeather
-			if (current) {
-				current.locationLabel = label
-				current.geo = data
-				await asyncStorage.setItem('weather_cache', current)
-			}
-		} catch {
-			// Silently ignore — city label is a bonus, not critical
+			// Persist to the LRU geocode dict + update the weather snapshot so reloads show the label
+			await saveGeocode(lat, lng, { ...data, label })
+			await persistCache()
+		} catch (e) {
+			// City label is a bonus, not critical — log so future regressions are visible
+			console.error('reverseGeocode failed:', e)
 		}
 	}
 
-	async function requestLocation(force: boolean = false) {
+	async function requestLocation() {
 		loadingState = 'locating'
 		locationError = null
 
@@ -214,44 +215,16 @@ export function useWeather(useRemoteFns = false) {
 			const position = await getUserLocation()
 			const { latitude, longitude } = position.coords
 
-			// Successful GPS — clear any lingering IP-fallback flags
 			isApproxLocation = false
 			ipCity = null
 			ipIsp = ''
-			// Don't blank gpsCity here — reverseGeocode will update it (possibly from cache instantly)
-
-			loadingState = 'idle'
-			let shouldFetch = true
-
-			if (!force && cachedWeather) {
-				const isLocationChanged = isDrasticLocationChange(
-					cachedWeather.lat,
-					cachedWeather.lng,
-					latitude,
-					longitude,
-				)
-				const isStale = Date.now() - cachedWeather.timestamp >= FRESHNESS_THRESHOLD
-
-				if (isLocationChanged) {
-					// User moved >= 3km, must fetch new data regardless of time
-					shouldFetch = true
-				} else if (!isStale) {
-					// Data is fresh and user hasn't moved significantly
-					shouldFetch = false
-					loadingState = 'idle'
-				}
-			}
 
 			// Fire reverse geocoding in the background — doesn't block weather loading
-			reverseGeocode(latitude, longitude, force)
-
-			if (shouldFetch) {
-				await fetchWeatherData(latitude, longitude)
-			}
+			reverseGeocode(latitude, longitude)
+			await fetchWeatherData(latitude, longitude)
 		} catch (error: any) {
 			console.error('Geolocation error:', error)
 
-			// If permission is denied, try IP fallback automatically
 			if (permissionState === 'denied' || error?.code === 1 /* PERMISSION_DENIED */) {
 				permissionState = 'denied'
 				await requestIpLocationFallback()
@@ -285,15 +258,14 @@ export function useWeather(useRemoteFns = false) {
 			return gpsCity
 		},
 		get displayWeather() {
-			return liveWeather || cachedWeather
+			return liveWeather
 		},
 		get isUpdatingInBg() {
-			return loadingState === 'fetching' && !!(liveWeather || cachedWeather) && !liveWeather
+			return false
 		},
 		get relativeTime() {
-			const display = liveWeather || cachedWeather
-			if (!display || !display.timestamp) return ''
-			const diffMs = now - display.timestamp
+			if (!liveWeather) return ''
+			const diffMs = now - liveWeather.timestamp
 			const diffMins = Math.floor(diffMs / 60000)
 
 			if (diffMins < 1) return 'Just now'
@@ -308,6 +280,24 @@ export function useWeather(useRemoteFns = false) {
 }
 
 // --- Helpers ---
+
+// Build a location label following the priority Ward > District > City > (empty → lat/lng).
+// Prefers two tokens ("ward, district" or "district, city") but degrades to a single token
+// when the adjacent level is missing. Empty string means the caller should fall back to lat/lng.
+function buildLocationLabel(data: {
+	city: string
+	country: string
+	district?: string
+	ward?: string
+}): string {
+	const { ward, district, city } = data
+	if (ward && district) return ward === district ? ward : `${ward}, ${district}`
+	if (ward) return ward
+	if (district && city) return `${district}, ${city}`
+	if (district) return district
+	if (city) return city
+	return ''
+}
 
 // Parse WMO Weather codes to human readable text and icons
 export function getWeatherCondition(code: number) {
@@ -329,15 +319,22 @@ async function fetchIpLocation(
 ): Promise<{ lat: number; lng: number; city: string; isp: string }> {
 	let data
 	if (useRemoteFns) {
-		data = await getIpLocationRemote()
+		data = await getIpLocationRemote().run()
 	} else {
 		const res = await fetch('/weather/api/ip-location')
 		if (!res.ok) throw new Error(`IP location proxy returned ${res.status}`)
 		data = await res.json()
 	}
 
-	// Build "City, Country" label — omit whichever part is missing
-	const city: string = [data.city, data.country].filter(Boolean).join(', ')
+	// Same priority chain as the GPS path (Ward > District > City > lat/lng).
+	// IP geolocation only resolves city/country, so this collapses to just the city
+	// — country is intentionally dropped to match the unified label rules.
+	const city = buildLocationLabel({
+		city: data.city ?? '',
+		country: data.country ?? '',
+		district: data.district,
+		ward: data.ward,
+	})
 	return { lat: data.lat, lng: data.lng, city, isp: data.isp ?? '' }
 }
 
@@ -349,7 +346,7 @@ async function getUserLocation(): Promise<GeolocationPosition> {
 		} else {
 			navigator.geolocation.getCurrentPosition(resolve, reject, {
 				timeout: 10000,
-				maximumAge: 5 * 60 * 1000, // Let the OS cache the coordinate for 5 minutes instead of 1 minute to reduce mobile battery drain and GPS icon flashing
+				maximumAge: 5 * 60 * 1000, // Let the OS cache the coordinate for 5 minutes to reduce mobile battery drain and GPS icon flashing
 			})
 		}
 	})
@@ -363,33 +360,6 @@ async function fetchOpenMeteoForecast(lat: number, lng: number): Promise<Weather
 		throw new Error(`API returned status: ${response.status}`)
 	}
 	return response.json()
-}
-
-// Haversine formula to calculate the great-circle distance between two points on a sphere given their longitudes and latitudes.
-// This detects drastic location changes (e.g. user moved >= 3km) so we know when to discard weather cache.
-function isDrasticLocationChange(oldLat: number, oldLng: number, newLat: number, newLng: number) {
-	const earthRadiusKm = 6371 // Earth's mean radius in kilometers
-	const drasticDistanceThresholdKm = 3 // The threshold in kilometers
-
-	// Convert latitude and longitude differences from degrees to radians
-	const deltaLatRadians = ((newLat - oldLat) * Math.PI) / 180
-	const deltaLngRadians = ((newLng - oldLng) * Math.PI) / 180
-
-	// Calculate the square of half the chord length between the points (a)
-	const a =
-		Math.sin(deltaLatRadians / 2) * Math.sin(deltaLatRadians / 2) +
-		Math.cos((oldLat * Math.PI) / 180) *
-			Math.cos((newLat * Math.PI) / 180) *
-			Math.sin(deltaLngRadians / 2) *
-			Math.sin(deltaLngRadians / 2)
-
-	// Calculate the angular distance in radians (c)
-	const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-
-	// Calculate the great-circle distance in kilometers
-	const distanceKm = earthRadiusKm * c
-
-	return distanceKm >= drasticDistanceThresholdKm
 }
 
 // --- Types & Interfaces ---
@@ -435,18 +405,32 @@ export interface WeatherResponse {
 	daily: DailyWeather
 }
 
-export interface GeoInfo {
-	city: string
-	country: string
-	district?: string
-	ward?: string
-}
-
-export interface WeatherCacheItem {
+export interface WeatherData {
 	lat: number
 	lng: number
 	timestamp: number
 	weather: WeatherResponse
-	locationLabel?: string
-	geo?: GeoInfo
+}
+
+// One entry in the weather.geocodes LRU dict. `lastAccessedAt` drives eviction.
+interface GeocodeEntry {
+	city: string
+	country: string
+	district?: string
+	ward?: string
+	label: string // pre-built display label to avoid re-building on every read
+	lastAccessedAt: number
+}
+
+// Persisted snapshot stored under the single "weather" localStorage key.
+// Envelope (expiresAt) is added automatically by the cache factory.
+interface WeatherAppCache {
+	lat: number
+	lng: number
+	weather: WeatherResponse
+	fetchedAt: number
+	gpsCity?: string
+	isApproxLocation: boolean
+	ipCity?: string | null
+	ipIsp?: string
 }
