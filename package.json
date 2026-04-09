@@ -12,7 +12,7 @@
 		"preview": "vite preview",
 		"preview:cf": "wrangler dev",
 		"deploy:cf": "wrangler deploy",
-		"cf-typegen": "wrangler types",
+		"cf-typegen": "wrangler types && pnpm oxfmt --write worker-configuration.d.ts",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:scripts": "tsc --noEmit -p scripts/tsconfig.json",
 		"test:e2e": "playwright test",
@@ -59,6 +59,6 @@
 		"wrangler": "^4.81.0"
 	},
 	"engines": {
-		"node": ">=24.14.0"
+		"node": ">=24.14.1"
 	}
 }
