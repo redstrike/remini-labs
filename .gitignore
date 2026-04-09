@@ -12,6 +12,9 @@ vite.config.ts.timestamp-*
 # local env files
 .dev.vars
 
+# Claude Code local settings (per-user overrides)
+.claude/settings.local.json
+
 # Cloudflare Wrangler local state
 .wrangler/
 .gstack/
