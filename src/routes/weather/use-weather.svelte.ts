@@ -284,12 +284,7 @@ export function useWeather({ useRemoteFns = false }: UseWeatherOptions = {}) {
 // Build a location label following the priority Ward > District > City > (empty → lat/lng).
 // Prefers two tokens ("ward, district" or "district, city") but degrades to a single token
 // when the adjacent level is missing. Empty string means the caller should fall back to lat/lng.
-function buildLocationLabel(data: {
-	city: string
-	country: string
-	district?: string
-	ward?: string
-}): string {
+function buildLocationLabel(data: { city: string; country: string; district?: string; ward?: string }): string {
 	const { ward, district, city } = data
 	if (ward && district) return ward === district ? ward : `${ward}, ${district}`
 	if (ward) return ward

@@ -1,27 +1,21 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          { "type": "command", "command": "node .claude/hooks/block-paths.mjs" }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          { "type": "command", "command": "node .claude/hooks/post-edit.mjs" }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": "node .claude/hooks/check-docs-cache.mjs" }
-        ]
-      }
-    ]
-  }
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Edit|Write|MultiEdit",
+				"hooks": [{ "type": "command", "command": "node .claude/hooks/block-paths.mjs" }]
+			}
+		],
+		"PostToolUse": [
+			{
+				"matcher": "Edit|Write|MultiEdit",
+				"hooks": [{ "type": "command", "command": "node .claude/hooks/post-edit.mjs" }]
+			}
+		],
+		"SessionStart": [
+			{
+				"hooks": [{ "type": "command", "command": "node .claude/hooks/check-docs-cache.mjs" }]
+			}
+		]
+	}
 }

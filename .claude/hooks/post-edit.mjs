@@ -31,7 +31,7 @@ function run(cmd, args) {
 	return r.status === 0
 }
 
-if (/\.svelte$/.test(norm)) {
+if (norm.endsWith('.svelte')) {
 	// Prettier handles .svelte via prettier-plugin-svelte (already in devDeps).
 	run('pnpm', ['exec', 'prettier', '--write', file])
 	// Nudge Claude to run the autofixer MCP tool — it can't be invoked from a shell hook.

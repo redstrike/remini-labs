@@ -27,8 +27,8 @@ Maintain a background dev server on **port 5173** for fast feedback on warnings 
 2. **If free** → start `pnpm dev --host` in the background. Done.
 3. **If occupied by your own prior background shell** → reuse it. Done.
 4. **If occupied by an unknown process** → ASK the user before killing:
-   - User approves → force-kill any process on ports **5173–5179**, then start `pnpm dev --host` in background.
-   - User declines → **do nothing.** Do not start a second server, do not switch ports. Another agent session may own it; leave it alone.
+    - User approves → force-kill any process on ports **5173–5179**, then start `pnpm dev --host` in background.
+    - User declines → **do nothing.** Do not start a second server, do not switch ports. Another agent session may own it; leave it alone.
 
 Never kill port-5173 processes without explicit user approval in the current turn.
 
@@ -52,16 +52,18 @@ For documentation lookups about Svelte/SvelteKit, shadcn-svelte, or any external
 ### How to use the cache
 
 - **For a known concept/API** (e.g. `$derived`, `bind:this`, `load function`, `adapter-cloudflare`):
-  ```
-  Grep pattern="$derived" path="docs/.cache/svelte.dev/llms-full.txt" -C 20
-  ```
-  Faster than any remote call. Use `-C` context to read surrounding explanation.
+
+    ```
+    Grep pattern="$derived" path="docs/.cache/svelte.dev/llms-full.txt" -C 20
+    ```
+
+    Faster than any remote call. Use `-C` context to read surrounding explanation.
 
 - **For a specific file in a multi-file source** (e.g. shadcn-svelte per-component):
-  1. Read the index: `docs/.cache/shadcn-svelte.com/llms.txt`
-  2. Pick the URL of the page you need from the index
-  3. Fetch and cache it: `pnpm docs:fetch <url>`
-  4. Read the cached file locally
+    1. Read the index: `docs/.cache/shadcn-svelte.com/llms.txt`
+    2. Pick the URL of the page you need from the index
+    3. Fetch and cache it: `pnpm docs:fetch <url>`
+    4. Read the cached file locally
 
 ### Fetching new docs into the cache
 
@@ -71,6 +73,7 @@ pnpm docs:fetch <url> --force           # bypass 7-day TTL
 ```
 
 The cache path is derived mechanically from `url.host` + `url.pathname`:
+
 ```
 https://svelte.dev/llms-full.txt              → docs/.cache/svelte.dev/llms-full.txt
 https://shadcn-svelte.com/docs/components/button.md
@@ -90,7 +93,8 @@ MCP servers may be configured at project scope (`.mcp.json`) or inherited from u
 Listed in `.mcp.json` at repo root. Currently configured:
 
 **Svelte MCP** — provides both documentation retrieval and code analysis.
-- **`svelte-autofixer` — MANDATORY for Svelte code.** Analyzes *your* code against the Svelte compiler and returns issues/suggestions. You MUST run it whenever writing Svelte code, before sending it to the user. Keep calling it until no issues or suggestions are returned. The local docs cache does NOT replace this — autofixer analyzes code, not docs.
+
+- **`svelte-autofixer` — MANDATORY for Svelte code.** Analyzes _your_ code against the Svelte compiler and returns issues/suggestions. You MUST run it whenever writing Svelte code, before sending it to the user. Keep calling it until no issues or suggestions are returned. The local docs cache does NOT replace this — autofixer analyzes code, not docs.
 - **`playground-link`** — generates a Svelte Playground link with the provided code. Only call after user confirmation, and NEVER if code was written to files in their project.
 - **`get-documentation` / `list-sections`** — docs-retrieval tools. Fall under the "Docs lookup strategy" rule above: cache first (`docs/.cache/svelte.dev/llms-full.txt`), then these as fallback when the cached file doesn't surface what you need.
 
@@ -139,8 +143,8 @@ Both `chrome-devtools` and `playwright` MCP servers are configured. **`chrome-de
 
 1. Local `docs/.cache/` if relevant
 2. **Microsoft Learn MCP and `context7` are co-equal** — pick by domain:
-   - Cloud architecture / .NET / distributed-systems concepts → Microsoft Learn
-   - JS/TS library API, npm package usage → context7
+    - Cloud architecture / .NET / distributed-systems concepts → Microsoft Learn
+    - JS/TS library API, npm package usage → context7
 3. Web fetch — last resort
 
 ### User-scope or future project-scope MCP servers
@@ -201,14 +205,14 @@ If the user types `/<name>` (e.g. `/commit`, `/ship`, `/review-pr`), they are in
 
 ## Task delegation & parallelism
 
-The principles below frame the director's mindset; the operational subsections (*When to delegate*, *Briefing subagents*, *Latency mechanisms*, *Synthesis*) translate them into action. Read both — principles alone are too abstract to act on, and rules alone drift toward cargo-culting.
+The principles below frame the director's mindset; the operational subsections (_When to delegate_, _Briefing subagents_, _Latency mechanisms_, _Synthesis_) translate them into action. Read both — principles alone are too abstract to act on, and rules alone drift toward cargo-culting.
 
 **If a skill is already active in the current turn** (a `superpowers:*` workflow, a `/skill-name` invocation, or any other skill expanded into context), follow that skill's process — it has the priority. The rules below are the project's standalone defaults: they apply when no skill has framed the task, and they should never contradict an active skill. Where an active skill leaves a gap, fall back to these defaults.
 
 ### Core principles (the director's playbook)
 
 1. **You are the director/commander.** Your job is to understand intent, classify the task, decompose it, dispatch units to the right execution surface (yourself, parallel tools, subagents, background tasks), and synthesize the result. You are accountable for what the user reads. Never hand the user a raw subagent report and never write "based on the findings, do X" — read, understand, then act.
-2. **Classify before dispatching.** Every non-trivial request gets a triage pass *before* any tool call: known target or open-ended? one unit or many independent units? short or long-running? high-stakes? The right execution surface follows from the answer. If you cannot say what a subagent will return and how you will use it, the brief is not ready.
+2. **Classify before dispatching.** Every non-trivial request gets a triage pass _before_ any tool call: known target or open-ended? one unit or many independent units? short or long-running? high-stakes? The right execution surface follows from the answer. If you cannot say what a subagent will return and how you will use it, the brief is not ready.
 3. **Fast by default; correctness is the gate.** Deliver results as quickly as possible — analyze the task, pick the execution mode that maximizes throughput (parallelism, background tasks, subagents, the right specialist), and ship. Correctness, accuracy, and groundedness are the non-negotiable floor: never let a faster path compromise them. A fast wrong answer is a regression, not a win.
 4. **Parallelism is the default for independent work.** When two or more units have no data dependency between them, run them concurrently — multiple tool calls in one message, multiple `Agent` calls in one message. Sequential dispatch of independent work is a bug.
 5. **Background long-runners; never block the main loop on waiting.** Builds, test runs, large fetches, broad audits — push them to background bash or background subagents, keep working, and read results only when the next step actually needs them. Idle main-loop time is wasted user time.
@@ -235,7 +239,7 @@ Subagents start with **zero conversation context**. A terse prompt produces shal
 
 ### Latency mechanisms
 
-The four concrete primitives. Match each to the relevant trigger in *When to delegate* above; do not re-derive when to use them.
+The four concrete primitives. Match each to the relevant trigger in _When to delegate_ above; do not re-derive when to use them.
 
 - **Parallel tool calls** — multiple tool uses in a single assistant message.
 - **Background bash** — `Bash` with `run_in_background: true`. Read output via `BashOutput` only when you actually need it.

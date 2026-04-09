@@ -45,5 +45,4 @@ export const asyncStorage = {
 			return []
 		}
 	},
-
 }
