@@ -5,6 +5,36 @@
 			"command": "pnpm",
 			"args": ["svelte-mcp"],
 			"env": {}
+		},
+		"context7": {
+			"type": "stdio",
+			"command": "pnpm",
+			"args": ["dlx", "@upstash/context7-mcp"],
+			"env": {}
+		},
+		"playwright": {
+			"type": "stdio",
+			"command": "pnpm",
+			"args": ["dlx", "@playwright/mcp@latest"],
+			"env": {}
+		},
+		"cloudflare-observability": {
+			"type": "stdio",
+			"command": "pnpm",
+			"args": ["dlx", "mcp-remote", "https://observability.mcp.cloudflare.com/sse"],
+			"env": {}
+		},
+		"chrome-devtools": {
+			"type": "stdio",
+			"command": "pnpm",
+			"args": ["dlx", "chrome-devtools-mcp@latest"],
+			"env": {}
+		},
+		"microsoft-learn": {
+			"type": "stdio",
+			"command": "pnpm",
+			"args": ["dlx", "mcp-remote", "https://learn.microsoft.com/api/mcp"],
+			"env": {}
 		}
 	}
 }

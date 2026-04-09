@@ -14,18 +14,24 @@
 			"Bash(pnpm dev:*)",
 			"Bash(pnpm fmt:*)",
 			"Bash(pnpm lint:*)",
-			"Bash(pnpm oxlint:*)",
 			"Bash(pnpm preview:*)",
-			"Bash(pnpm vitest:*)",
 
 			"PowerShell(Get-NetTCPConnection:*)",
 			"PowerShell(Stop-Process:*)",
 
 			"mcp__plugin_chrome-devtools-mcp_chrome-devtools__click",
 			"mcp__plugin_chrome-devtools-mcp_chrome-devtools__evaluate_script",
+			"mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_console_messages",
+			"mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_network_requests",
 			"mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page",
+			"mcp__plugin_chrome-devtools-mcp_chrome-devtools__new_page",
 			"mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot",
-			"mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_snapshot"
+			"mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_snapshot",
+
+			"mcp__svelte__get-documentation",
+			"mcp__svelte__list-sections"
 		]
-	}
+	},
+	"enabledMcpjsonServers": ["svelte"],
+	"enableAllProjectMcpServers": true
 }

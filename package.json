@@ -14,11 +14,13 @@
 		"deploy:cf": "wrangler deploy",
 		"cf-typegen": "wrangler types",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:scripts": "tsc --noEmit -p scripts/tsconfig.json",
 		"test:e2e": "playwright test",
 		"fmt": "oxfmt && prettier --write \"**/*.svelte\"",
 		"fmt:check": "oxfmt --check && prettier --check \"**/*.svelte\"",
 		"lint": "oxlint",
-		"lint:fix": "oxlint --fix"
+		"lint:fix": "oxlint --fix",
+		"docs:fetch": "node scripts/fetch-docs.mts"
 	},
 	"dependencies": {
 		"lightweight-charts": "^5.1.0"
