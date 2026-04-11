@@ -3,15 +3,71 @@
 ```bash
 pnpm preview:cf       # Wrangler local preview (Cloudflare Workers runtime)
 pnpm deploy:cf        # Deploy to Cloudflare Workers
-pnpm check            # svelte-kit sync + svelte-check
-pnpm check:scripts    # tsc --noEmit for scripts/*.mts
-pnpm fmt              # oxfmt + prettier (Svelte)
-pnpm lint             # oxlint
+pnpm check            # svelte-kit sync + svelte-check (stable, baseline compiler)
+pnpm check:fast       # svelte-check only, skips sync, uses tsgo + incremental
+pnpm check:scripts    # tsc --noEmit for scripts/*.mts (stable)
+pnpm check:scripts:fast # tsgo --noEmit for scripts/*.mts (TS 7 preview)
+pnpm fmt              # oxfmt + prettier --write (applies fixes, terminal)
+pnpm lint             # oxlint (read-only check)
+pnpm lint:fix         # oxlint --fix (applies fixes, terminal)
 pnpm test:e2e         # Playwright
+pnpm test:scripts     # Vitest integration tests for scripts/ and hooks
 pnpm docs:fetch <url> # cache external docs to docs/.cache/
 ```
 
-Always run `pnpm fmt` and `pnpm lint` after coding tasks, before presenting work.
+### Code quality after edits
+
+After editing code, run the fixers targeted at ONLY the files you touched.
+Do NOT run project-scope `pnpm fmt` / `pnpm lint:fix` for small edits — they scan
+every file in the repo and add several seconds of latency per turn.
+
+Order: run format+lint FIRST (they may modify files), then type-check.
+
+**Format + lint — triggered by extension of every edited file:**
+
+- **JS / TS / `.mts` / `.cts`:** `pnpm oxfmt --write <paths> && pnpm oxlint --fix <paths>`
+- **Svelte:** `pnpm prettier --write <paths>` (oxfmt doesn't parse Svelte syntax)
+
+**Write tools are terminal — do NOT re-run `--check` after `--write`/`--fix`.**
+`oxfmt --write`, `oxlint --fix`, and `prettier --write` all run the internal
+check and apply fixes atomically. The writer's exit code IS the check's exit
+code. Running `oxfmt --check`, `oxlint` (read-only), or `prettier --check`
+right after the writer is wasted work.
+
+Batch all touched paths into a single invocation per command — never run the
+fixers once per file. Fall back to project-scope `pnpm fmt` + `pnpm lint:fix` only
+when the diff is broad (≥10 files) or after moves/renames where you aren't
+sure what else needs attention.
+
+**Type-check — triggered by location of every edited file:**
+
+- **Any file under `src/` (`.svelte`, `.svelte.ts`, `.ts`):** `pnpm check:fast`.
+  Internally passes `--tsgo` and `--incremental` to svelte-check for ~64%
+  faster warm runs (measured: ~11s → ~4s). Cache lives under
+  `.svelte-kit/.svelte-check/` (already gitignored via `/.svelte-kit`) and
+  survives `svelte-kit sync`. Diagnostics are byte-identical to stable
+  `pnpm check`. Use the stable `pnpm check` INSTEAD (which runs the sync
+  prelude first) when your edit matches any of these mechanical triggers:
+    - Created, deleted, or renamed ANY file under `src/routes/`
+    - Edited a `+*.ts` file under `src/routes/` (`+page.ts`, `+page.server.ts`,
+      `+layout.ts`, `+layout.server.ts`) — load function return types feed
+      `svelte-kit sync`'s generated `$types.d.ts`
+    - Edited `svelte.config.js`
+- **Any file under `scripts/` (`.mts`):** `pnpm check:scripts:fast`.
+  Uses the `tsgo` binary (TS 7 Go compiler via `@typescript/native-preview`)
+  for a ~42% speedup over the stable `pnpm check:scripts` (tsc). Byte-identical
+  output. The tsconfig is already scoped narrowly to `scripts/`, so both are
+  cheap (~1–2s).
+
+Each `:fast` variant is an opt-in accelerated sibling of a stable baseline
+script — the stable `pnpm check` / `pnpm check:scripts` are untouched and
+remain the canonical forms for CI, pre-commit hooks, and anyone who wants to
+avoid the TypeScript 7 preview.
+
+The two type-check commands are independent: edits confined to `src/` only →
+`pnpm check:fast`; edits confined to `scripts/` only → `pnpm check:scripts:fast`;
+edits touching both → run both. Edits outside these two locations (e.g. `tests/`,
+repo-root configs, docs) don't need either type-check.
 
 ## Stack
 
@@ -48,6 +104,15 @@ For documentation lookups about Svelte/SvelteKit, shadcn-svelte, or any external
 
 - **Svelte + SvelteKit full docs:** `docs/.cache/svelte.dev/llms-full.txt` (~1.1 MB, single file containing the entire site). Grep it with targeted patterns instead of reading it whole. This replaces MCP round-trips for common lookups.
 - **shadcn-svelte:** `docs/.cache/shadcn-svelte.com/llms.txt` (index) + any per-component pages cached on demand.
+
+### Freshness awareness when reading cached docs
+
+Every time you read a file under `docs/.cache/`, check its `mtime`. If it's older than **7 days**, you are looking at potentially stale documentation — proactively refetch before trusting the content:
+
+- **For an anchor file** (`llms-full.txt` or `llms.txt` directly under `docs/.cache/<domain>/...`): refetch with `pnpm docs:fetch https://<domain>/<relative-path> --force`. The cache path-to-URL mapping is mechanical: strip `docs/.cache/`, the first segment is the host, the rest is the pathname.
+- **For a leaf page under a multi-file cache** (e.g. `docs/.cache/shadcn-svelte.com/docs/components/button.md`): the index `llms.txt` in the same domain is the source of truth for canonical URLs. Read it first if you need to confirm the exact upstream URL, then refetch the leaf the same way.
+
+Rationale: the SessionStart hook (`scripts/check-docs-cache.mts`) only refreshes the per-domain anchor automatically. Leaf pages fetched cache-on-use can still go stale mid-session, and you are the one who knows which leaf you are reading. If a refetch fails due to network/upstream issues, note it in your response and proceed with the stale copy — do not block the user's task.
 
 ### How to use the cache
 
