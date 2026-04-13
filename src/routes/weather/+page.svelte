@@ -107,7 +107,7 @@
 						{#if weather.displayWeather}
 							<button
 								class="weather-refresh-btn"
-								onclick={() => weather.requestLocation(true)}
+								onclick={() => weather.requestLocation()}
 								disabled={weather.loadingState !== 'idle'}
 								title="Refresh weather">
 								<RefreshCw size={13} class={weather.loadingState !== 'idle' ? 'weather-spinner' : ''} />
@@ -215,7 +215,7 @@
 							</p>
 							<button
 								class="weather-prompt-btn"
-								onclick={() => weather.requestLocation(true)}
+								onclick={() => weather.requestLocation()}
 								disabled={weather.loadingState !== 'idle'}>
 								{#if weather.loadingState !== 'idle'}
 									<LoaderCircle size={16} class="weather-spinner" />
