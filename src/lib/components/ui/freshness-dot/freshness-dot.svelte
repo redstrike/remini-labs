@@ -4,22 +4,40 @@
 		elapsed: number
 		/** Total freshness window in milliseconds */
 		ttl: number
+		/** Show inline debug text */
+		debug?: boolean
 	}
 
-	let { elapsed, ttl }: Props = $props()
+	let { elapsed, ttl, debug = false }: Props = $props()
 
 	type Freshness = 'fresh' | 'good' | 'aging' | 'stale'
 
 	const freshness: Freshness = $derived.by(() => {
-		const pct = 1 - elapsed / ttl
-		if (pct > 0.75) return 'fresh'
-		if (pct > 0.5) return 'good'
-		if (pct > 0.25) return 'aging'
+		const freshRatio = 1 - elapsed / ttl
+		if (freshRatio >= 0.75) return 'fresh'
+		if (freshRatio >= 0.5) return 'good'
+		if (freshRatio >= 0.25) return 'aging'
 		return 'stale'
+	})
+
+	const debugText = $derived.by(() => {
+		if (!debug) return ''
+		const elapsedSec = Math.floor(elapsed / 1000)
+		const ttlSec = Math.floor(ttl / 1000)
+		const remainingSec = Math.max(0, ttlSec - elapsedSec)
+		const freshPercent = Math.round((1 - elapsed / ttl) * 100)
+		return `${elapsedSec}s/${ttlSec}s (${freshPercent}%) · refresh in ${remainingSec}s`
 	})
 </script>
 
-<span class="freshness-dot {freshness}"></span>
+{#if debug}
+	<span class="freshness-debug">
+		<span class="freshness-dot {freshness}"></span>
+		<span class="freshness-debug-text">{debugText}</span>
+	</span>
+{:else}
+	<span class="freshness-dot {freshness}"></span>
+{/if}
 
 <style>
 	.freshness-dot {
@@ -56,5 +74,16 @@
 		50% {
 			opacity: 0.4;
 		}
+	}
+	.freshness-debug {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.freshness-debug-text {
+		font-family: 'Geist Mono', monospace;
+		font-size: 9px;
+		color: #a0a0ac;
+		white-space: nowrap;
 	}
 </style>

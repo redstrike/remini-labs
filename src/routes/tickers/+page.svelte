@@ -51,17 +51,28 @@
 	// UI reacts to fetch events — spinner state owned by the page, not the data layer
 	let fetchingMetals = $state(false)
 	let fetchingCrypto = $state(false)
+	let fetchingMetalsChart = $state(false)
+	let fetchingCryptoChart = $state(false)
+	const fetchingChart = $derived(tickers.isCryptoAsset ? fetchingCryptoChart : fetchingMetalsChart)
 
 	$effect(() => {
 		const unsub1 = tickers.bus.on('metals:fetching', () => (fetchingMetals = true))
 		const unsub2 = tickers.bus.on('metals:fetched', () => (fetchingMetals = false))
 		const unsub3 = tickers.bus.on('crypto:fetching', () => (fetchingCrypto = true))
 		const unsub4 = tickers.bus.on('crypto:fetched', () => (fetchingCrypto = false))
+		const unsub5 = tickers.bus.on('chart:metals:fetching', () => (fetchingMetalsChart = true))
+		const unsub6 = tickers.bus.on('chart:metals:fetched', () => (fetchingMetalsChart = false))
+		const unsub7 = tickers.bus.on('chart:crypto:fetching', () => (fetchingCryptoChart = true))
+		const unsub8 = tickers.bus.on('chart:crypto:fetched', () => (fetchingCryptoChart = false))
 		return () => {
 			unsub1()
 			unsub2()
 			unsub3()
 			unsub4()
+			unsub5()
+			unsub6()
+			unsub7()
+			unsub8()
 		}
 	})
 </script>
@@ -267,6 +278,19 @@
 							{tab.label}
 						</button>
 					{/each}
+					<div class="tickers-chart-status">
+						<FreshnessDot elapsed={tickers.chartElapsed} ttl={tickers.chartTtl} />
+						<button
+							class="tickers-card-refresh"
+							onclick={() => tickers.refreshChart()}
+							disabled={fetchingChart}
+							title="Refresh chart">
+							<SpinnerIcon
+								size={10}
+								class={fetchingChart ? 'tickers-spinner' : ''}
+								style={fetchingChart ? 'animation-duration: 500ms' : ''} />
+						</button>
+					</div>
 				</div>
 				<div class="tickers-chart-sub-controls">
 					<div class="tickers-candle-sizes">
@@ -604,6 +628,13 @@
 		border-radius: 12px 12px 0 0;
 		border-bottom: 1px solid #2a2a36;
 		gap: 0;
+	}
+	.tickers-chart-status {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		margin-left: auto;
+		flex-shrink: 0;
 	}
 	@media (max-width: 639px) {
 		.tickers-chart-tabs {

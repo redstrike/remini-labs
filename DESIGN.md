@@ -78,7 +78,7 @@
 - **Card gap:** 16px
 - **Container padding:** 24px vertical, 16px horizontal
 - **Chart section (mobile ≤639px):** Full viewport width (negative margins cancel container padding), 10px internal padding, no border-radius, no side borders
-- **Chart section header:** Two rows — Gold/Silver tabs (row 1, bg #1a1a24 with bottom border), Candle + Interval controls (row 2, bg #121218)
+- **Chart section header:** Two rows — asset tabs with freshness dot + refresh button (row 1, bg #1a1a24 with bottom border), Candle + Interval controls (row 2, bg #121218)
 - **Price scale nudge:** `position: relative; left: 5px` on `.tv-lightweight-charts td:nth-child(3)` to push price axis toward right edge
 - **Border radius:** sm:4px (chips, badges) md:6px (buttons) lg:12px (cards) full:9999px (dots)
 
@@ -146,7 +146,7 @@
     - Desktop (standard=17px, step=2px): 21→19→17→15→13→11 (1D), 23→21→19→17→15→13 (3D), 25→23→21→19→17→15 (1W)
     - Candle size bonus: 1D=0, 3D=+1×step, 1W=+2×step
     - Tier thresholds use 1D-equivalent candle count (numCandles × sizeFactor) to keep tier stable across candle sizes
-- **Caching:** Client-side Map with 30-min TTL, keyed by asset (always 1Y data)
+- **Caching:** Client-side Map keyed by asset (always 1Y data), TTL per asset class (15m metals, 5m crypto — matches polling intervals)
 
 ## Data Architecture
 
@@ -161,8 +161,10 @@
 - **Gold prices:** Table API provides per-chỉ prices, × 10 for per-lượng. Both units shown in compact table.
 - **Silver prices:** Table API provides per-unit prices. Sorted small unit first (lượng → kg).
 - **Silver filter:** Excludes BM1OZ and "miếng" (mỹ nghệ) items
-- **Freshness indicator:** 4-state FreshnessDot component (fresh/good/aging/stale) based on elapsed time vs poll interval. Dot color + pulse speed change as data ages. Per-card refresh button with spinner driven by event bus.
-- **Event bus:** Typed event bus per mini-app. Data layer emits `fetching`/`fetched` events, UI subscribes and manages spinner state independently. Error-isolated, Set-dedup, snapshot iteration.
+- **Freshness indicator:** 4-state FreshnessDot component (fresh/good/aging/stale) based on elapsed time vs poll interval. Dot color + pulse speed change as data ages. Per-card and per-chart refresh button with spinner driven by event bus. Optional `debug` prop renders inline elapsed/ttl/percentage text (zero-cost when off).
+- **Now tick:** `NOW_TICK_MS = 6s` (10 updates/min) — drives freshness state transitions. Two full cycles of the longest pulse (3s fresh), 3 breath lag at 2s "good" pulse, above perceptual responsive floor (20upm). `now` state also synced on every fetch completion and visibility return for instant dot reset.
+- **Chart freshness:** FreshnessDot in chart asset tabs row (right-aligned, dot-only). TTL follows client polling intervals per asset class (15m metals, 5m crypto), not a fixed cache TTL. Chart auto-refreshes when matching spot poll succeeds.
+- **Event bus:** Typed event bus per mini-app. Data layer emits `fetching`/`fetched` events, UI subscribes and manages spinner state independently. Per-source chart events (`chart:metals:*`, `chart:crypto:*`) decouple spinner from unrelated fetches. Error-isolated, Set-dedup, snapshot iteration.
 - **VND formatting:** No fractional digits (1 VND is negligibly small)
 - **USDT formatting:** Tiered precision — <100: 2dp, 100-999: 1dp, >=1000: 0dp
 
@@ -243,3 +245,8 @@
 | 2026-04-09 | Weather card capped at 440px                             | iPhone 17 Pro Max class cap — glanceable card shouldn't stretch across tablet/desktop viewports                                                                   |
 | 2026-04-09 | Unified location label: Ward > District > City > lat/lng | Same priority chain for GPS and IP paths; gpsCity wins over ipCity; Approximate badge tied to IP fallback, not to label precision                                 |
 | 2026-04-09 | Weather: single 15 min hard TTL, no stale ladder         | Dropped drastic-location/stale-refresh ladder in favor of one createCache() TTL; simpler state, no cached-vs-live dual sources                                    |
+| 2026-04-14 | Chart freshness dot + auto-refresh + refresh button      | FreshnessDot in chart tabs row; per-asset TTL (15m metals, 5m crypto) replaces fixed 30m CHART_CACHE_TTL; auto-refresh piggybacks on spot poll success             |
+| 2026-04-14 | Per-source chart bus events                              | `chart:metals:*` / `chart:crypto:*` — decouples chart spinner from unrelated fetches (e.g. crypto poll doesn't spin metals chart spinner)                         |
+| 2026-04-14 | NOW_TICK_MS = 6s (10 updates/min)                        | Animation interval math: 2× longest pulse (3s fresh), above 20upm perceptual floor. Cross-browser research confirmed 1s-6s safe for mobile battery; platform handles background throttling |
+| 2026-04-14 | FreshnessDot debug prop                                  | Optional inline text showing elapsed/ttl/percentage/countdown. Zero-cost when off ($derived early-returns, {#if} block not mounted)                               |
+| 2026-04-14 | Sync `now` on every fetch completion                     | Freshness dots snap to green immediately on fetch success instead of waiting up to 6s for next tick                                                               |

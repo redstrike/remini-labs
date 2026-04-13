@@ -11,6 +11,10 @@ type TickersEvents = {
 	'metals:fetched': FetchResult
 	'crypto:fetching': void
 	'crypto:fetched': FetchResult
+	'chart:metals:fetching': void
+	'chart:metals:fetched': FetchResult
+	'chart:crypto:fetching': void
+	'chart:crypto:fetched': FetchResult
 }
 
 // Polling intervals — how often to fetch fresh data
@@ -24,8 +28,8 @@ const CRYPTO_STALE_MS = CRYPTO_POLL_MS
 // Visibility fetch — debounce when tab becomes visible again
 const VISIBILITY_DEBOUNCE_MS = 10 * 1000 // 10s — matches server-side debounce TTL
 
-// Tick interval — how often to re-evaluate freshness state
-const FRESHNESS_TICK_MS = 60 * 1000 // 1 min — sufficient for 5-15 min stale thresholds
+// How often to update `now` — drives freshness dot state transitions
+const NOW_TICK_MS = 6_000 // 6s, 10 updates/min
 
 // Chart loading delay — prevent flash on fast fetches
 const LOADING_DELAY_MS = 250 // 250ms — show loading only if fetch takes longer
@@ -57,9 +61,10 @@ export function useTickers(initialData: TickersData) {
 			const res = await fetch('/tickers/api/spots/metals')
 			if (res.ok) {
 				priceTable = await res.json()
-				lastFetchedAt = Date.now()
+				now = lastMetalsFetchedAt = Date.now()
 				error = null
 				bus.emit('metals:fetched', { ok: true })
+				if (!(chartAsset in CRYPTO_SYMBOLS)) autoRefreshChart()
 			} else {
 				bus.emit('metals:fetched', { ok: false, error: `API returned ${res.status}` })
 			}
@@ -84,13 +89,15 @@ export function useTickers(initialData: TickersData) {
 		return () => clearInterval(interval)
 	})
 
+	let now = $state(Date.now())
+
 	// Fetch all data when tab becomes visible again (debounced)
 	$effect(() => {
 		if (!browser) return
 		function onVisible() {
 			if (document.visibilityState !== 'visible') return
-			const now = Date.now()
-			if (now - lastFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchMetals()
+			now = Date.now()
+			if (now - lastMetalsFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchMetals()
 			if (now - lastCryptoFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchCryptoTickers()
 		}
 		document.addEventListener('visibilitychange', onVisible)
@@ -142,8 +149,9 @@ export function useTickers(initialData: TickersData) {
 			const res = await fetch('/tickers/api/spots/crypto')
 			if (res.ok) {
 				cryptoTickers = await res.json()
-				lastCryptoFetchedAt = Date.now()
+				now = lastCryptoFetchedAt = Date.now()
 				bus.emit('crypto:fetched', { ok: true })
+				if (chartAsset in CRYPTO_SYMBOLS) autoRefreshChart()
 			} else {
 				bus.emit('crypto:fetched', { ok: false, error: `API returned ${res.status}` })
 			}
@@ -153,17 +161,16 @@ export function useTickers(initialData: TickersData) {
 		}
 	}
 
-	let lastFetchedAt = $state(Date.now())
-	let now = $state(Date.now())
+	let lastMetalsFetchedAt = $state(Date.now())
 
-	const metalsElapsed = $derived(now - lastFetchedAt)
+	const metalsElapsed = $derived(now - lastMetalsFetchedAt)
 	const cryptoElapsed = $derived(now - lastCryptoFetchedAt)
 
 	$effect(() => {
 		if (!browser) return
 		const timer = setInterval(() => {
 			now = Date.now()
-		}, FRESHNESS_TICK_MS)
+		}, NOW_TICK_MS)
 		return () => clearInterval(timer)
 	})
 
@@ -249,12 +256,18 @@ export function useTickers(initialData: TickersData) {
 		fetchedAt: number
 	}
 	const chartCache = new Map<string, CacheEntry>()
-	const CHART_CACHE_TTL = 30 * 60 * 1000 // 30 min — client-side chart data cache
+
+	function chartCacheTtl(asset: ChartAsset): number {
+		return asset in CRYPTO_SYMBOLS ? CRYPTO_STALE_MS : METALS_STALE_MS
+	}
+
+	const chartElapsed = $derived(now - (chartCache.get(chartAsset)?.fetchedAt ?? now))
+	const chartTtl = $derived(chartCacheTtl(chartAsset))
 
 	function getCached(asset: ChartAsset): ChartData | null {
 		const entry = chartCache.get(asset)
 		if (!entry) return null
-		if (Date.now() - entry.fetchedAt > CHART_CACHE_TTL) {
+		if (Date.now() - entry.fetchedAt > chartCacheTtl(asset)) {
 			chartCache.delete(asset)
 			return null
 		}
@@ -262,7 +275,8 @@ export function useTickers(initialData: TickersData) {
 	}
 
 	function setCache(asset: ChartAsset, data: ChartData) {
-		chartCache.set(asset, { data, fetchedAt: Date.now() })
+		now = Date.now()
+		chartCache.set(asset, { data, fetchedAt: now })
 	}
 
 	// Load default chart on mount — client only
@@ -299,6 +313,8 @@ export function useTickers(initialData: TickersData) {
 			chartLoading = true
 		}, LOADING_DELAY_MS)
 		chartError = null
+		const chartSource = asset in CRYPTO_SYMBOLS ? 'crypto' : 'metals'
+		bus.emit(`chart:${chartSource}:fetching` as const, undefined as void)
 		try {
 			let data: ChartData
 
@@ -324,10 +340,12 @@ export function useTickers(initialData: TickersData) {
 			// Only update the view if this asset is still the active one
 			if (chartAsset !== asset) return
 			chartData = sliceToWindow(data, duration)
+			bus.emit(`chart:${chartSource}:fetched` as const, { ok: true })
 		} catch (e) {
 			if (chartAsset !== asset) return
 			if (!chartData) chartError = 'Unable to load chart data'
 			console.error('Chart fetch error:', e)
+			bus.emit(`chart:${chartSource}:fetched` as const, { ok: false, error: (e as Error).message })
 		} finally {
 			if (chartAsset === asset) {
 				if (loadingTimer) {
@@ -337,6 +355,12 @@ export function useTickers(initialData: TickersData) {
 				chartLoading = false
 			}
 		}
+	}
+
+	// Auto-refresh chart when spot poll fires for the matching data source
+	function autoRefreshChart() {
+		if (!chartData) return
+		fetchChart(chartAsset, chartDuration, true)
 	}
 
 	return {
@@ -385,6 +409,12 @@ export function useTickers(initialData: TickersData) {
 		get chartError() {
 			return chartError
 		},
+		get chartElapsed() {
+			return chartElapsed
+		},
+		get chartTtl() {
+			return chartTtl
+		},
 		get refreshing() {
 			return refreshing
 		},
@@ -394,6 +424,7 @@ export function useTickers(initialData: TickersData) {
 		refreshCrypto: fetchCryptoTickers,
 		selectSilver,
 		fetchChart,
+		refreshChart: () => fetchChart(chartAsset, chartDuration, true),
 	}
 }
 
