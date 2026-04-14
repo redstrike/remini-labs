@@ -3,6 +3,8 @@ import { createEventBus } from '$lib/event-bus'
 
 import type { CryptoTicker, CryptoSymbol } from './api/binance-client'
 import type { PriceTable, ChartData } from './api/phuquy-client'
+import type { IndexQuote } from './api/ssi-iboard-client'
+import { STOCKS_POLL_MS, computeNextPollTime, msUntilNextPoll } from './vn-stock-schedule'
 
 type FetchResult = { ok: true } | { ok: false; error: string }
 
@@ -11,15 +13,24 @@ type TickersEvents = {
 	'metals:fetched': FetchResult
 	'crypto:fetching': void
 	'crypto:fetched': FetchResult
+	'stocks:fetching': void
+	'stocks:fetched': FetchResult
 	'chart:metals:fetching': void
 	'chart:metals:fetched': FetchResult
 	'chart:crypto:fetching': void
 	'chart:crypto:fetched': FetchResult
+	'chart:stocks:fetching': void
+	'chart:stocks:fetched': FetchResult
 }
 
 // Polling intervals — how often to fetch fresh data
 const METALS_POLL_MS = 15 * 60 * 1000 // 15 min — Phu Quy prices move slowly
 const CRYPTO_POLL_MS = 5 * 60 * 1000 // 5 min — Binance prices move faster
+// STOCKS_POLL_MS is imported from vn-stock-schedule — stocks follow a phase-aware schedule
+// (5 min during trading; drains until next 09:00 ICT / 21:00 EOD otherwise).
+
+// The single VN stock symbol the app tracks today. Becomes state when the watchlist feature lands.
+const STOCK_SYMBOL = 'VN100'
 
 // Freshness thresholds — dot turns amber/red when exceeded
 const METALS_STALE_MS = METALS_POLL_MS // fresh within one poll cycle
@@ -45,6 +56,7 @@ const CRYPTO_SYMBOLS: Record<CryptoId, CryptoSymbol> = {
 interface TickersData {
 	table: PriceTable | null
 	crypto: CryptoTicker[] | null
+	vn100: IndexQuote | null
 }
 
 export function useTickers(initialData: TickersData) {
@@ -64,7 +76,7 @@ export function useTickers(initialData: TickersData) {
 				now = lastMetalsFetchedAt = Date.now()
 				error = null
 				bus.emit('metals:fetched', { ok: true })
-				if (!(chartAsset in CRYPTO_SYMBOLS)) autoRefreshChart()
+				if (chartAsset === 'gold' || chartAsset === 'silver') autoRefreshChart()
 			} else {
 				bus.emit('metals:fetched', { ok: false, error: `API returned ${res.status}` })
 			}
@@ -89,6 +101,25 @@ export function useTickers(initialData: TickersData) {
 		return () => clearInterval(interval)
 	})
 
+	// Poll VN100 per the VN market schedule — client only.
+	// Self-rescheduling setTimeout fires at the next meaningful transition
+	// (next 5-min tick during trading; 21:00 EOD on weekday closed hours;
+	//  next Mon 09:00 on weekends). Zero wasted wakes during closed windows.
+	$effect(() => {
+		if (!browser) return
+		let timer: ReturnType<typeof setTimeout> | null = null
+		function scheduleNext() {
+			timer = setTimeout(async () => {
+				await fetchStocks()
+				scheduleNext()
+			}, msUntilNextPoll())
+		}
+		scheduleNext()
+		return () => {
+			if (timer) clearTimeout(timer)
+		}
+	})
+
 	let now = $state(Date.now())
 
 	// Fetch all data when tab becomes visible again (debounced)
@@ -99,6 +130,10 @@ export function useTickers(initialData: TickersData) {
 			now = Date.now()
 			if (now - lastMetalsFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchMetals()
 			if (now - lastCryptoFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchCryptoTickers()
+			// Stocks: respect the schedule — only refetch once the scheduled next-poll time
+			// has passed since the last successful fetch. Avoids waking SSI on a Saturday.
+			const nextStocksPoll = computeNextPollTime(new Date(lastStocksFetchedAt)).getTime()
+			if (now >= nextStocksPoll) fetchStocks()
 		}
 		document.addEventListener('visibilitychange', onVisible)
 		return () => document.removeEventListener('visibilitychange', onVisible)
@@ -161,10 +196,33 @@ export function useTickers(initialData: TickersData) {
 		}
 	}
 
+	// VN100 spot quote
+	let vn100Quote = $state<IndexQuote | null>(initialData.vn100 ?? null)
+	let lastStocksFetchedAt = $state(Date.now())
+
+	async function fetchStocks() {
+		bus.emit('stocks:fetching', undefined as void)
+		try {
+			const res = await fetch(`/tickers/api/spots/stocks?symbol=${STOCK_SYMBOL}`)
+			if (res.ok) {
+				vn100Quote = await res.json()
+				now = lastStocksFetchedAt = Date.now()
+				bus.emit('stocks:fetched', { ok: true })
+				if (chartAsset === 'VN100') autoRefreshChart()
+			} else {
+				bus.emit('stocks:fetched', { ok: false, error: `API returned ${res.status}` })
+			}
+		} catch (e) {
+			console.error('Stocks fetch error:', e)
+			bus.emit('stocks:fetched', { ok: false, error: (e as Error).message })
+		}
+	}
+
 	let lastMetalsFetchedAt = $state(Date.now())
 
 	const metalsElapsed = $derived(now - lastMetalsFetchedAt)
 	const cryptoElapsed = $derived(now - lastCryptoFetchedAt)
+	const stocksElapsed = $derived(now - lastStocksFetchedAt)
 
 	$effect(() => {
 		if (!browser) return
@@ -182,7 +240,7 @@ export function useTickers(initialData: TickersData) {
 		error = null
 		chartCache.clear()
 		try {
-			await Promise.all([fetchMetals(), fetchCryptoTickers()])
+			await Promise.all([fetchMetals(), fetchCryptoTickers(), fetchStocks()])
 		} finally {
 			refreshing = false
 		}
@@ -196,7 +254,7 @@ export function useTickers(initialData: TickersData) {
 	}
 
 	// Chart helpers (pure functions, no state deps — must be above state init)
-	type ChartAsset = 'gold' | 'silver' | CryptoId
+	type ChartAsset = 'gold' | 'silver' | CryptoId | 'VN100'
 	type ChartDuration = '7D' | '15D' | '1M' | '3M' | '6M' | '1Y'
 
 	const DURATION_DAYS: Record<ChartDuration, number | null> = {
@@ -257,8 +315,13 @@ export function useTickers(initialData: TickersData) {
 	}
 	const chartCache = new Map<string, CacheEntry>()
 
-	function chartCacheTtl(asset: ChartAsset): number {
-		return asset in CRYPTO_SYMBOLS ? CRYPTO_STALE_MS : METALS_STALE_MS
+	function chartCacheTtl(asset: ChartAsset, fetchedAt: number = Date.now()): number {
+		// VN stocks follow the market schedule — TTL stretches across closed hours
+		if (asset === 'VN100') {
+			return computeNextPollTime(new Date(fetchedAt)).getTime() - fetchedAt
+		}
+		if (asset in CRYPTO_SYMBOLS) return CRYPTO_STALE_MS
+		return METALS_STALE_MS
 	}
 
 	const chartElapsed = $derived(now - (chartCache.get(chartAsset)?.fetchedAt ?? now))
@@ -267,7 +330,7 @@ export function useTickers(initialData: TickersData) {
 	function getCached(asset: ChartAsset): ChartData | null {
 		const entry = chartCache.get(asset)
 		if (!entry) return null
-		if (Date.now() - entry.fetchedAt > chartCacheTtl(asset)) {
+		if (Date.now() - entry.fetchedAt > chartCacheTtl(asset, entry.fetchedAt)) {
 			chartCache.delete(asset)
 			return null
 		}
@@ -313,12 +376,17 @@ export function useTickers(initialData: TickersData) {
 			chartLoading = true
 		}, LOADING_DELAY_MS)
 		chartError = null
-		const chartSource = asset in CRYPTO_SYMBOLS ? 'crypto' : 'metals'
+		const chartSource = asset === 'VN100' ? 'stocks' : asset in CRYPTO_SYMBOLS ? 'crypto' : 'metals'
 		bus.emit(`chart:${chartSource}:fetching` as const, undefined as void)
 		try {
 			let data: ChartData
 
-			if (asset in CRYPTO_SYMBOLS) {
+			if (asset === 'VN100') {
+				const res = await fetch(`/tickers/api/charts/stocks?symbol=${STOCK_SYMBOL}`)
+				if (!res.ok) throw new Error(`API returned ${res.status}`)
+				const raw = await res.json()
+				data = { changeRate: raw.changeRate, points: [], candles: raw.candles }
+			} else if (asset in CRYPTO_SYMBOLS) {
 				const symbol = CRYPTO_SYMBOLS[asset as CryptoId]
 				const res = await fetch(`/tickers/api/charts/crypto?symbol=${symbol}`)
 				if (!res.ok) throw new Error(`API returned ${res.status}`)
@@ -383,8 +451,14 @@ export function useTickers(initialData: TickersData) {
 			return selectedSilver
 		},
 		getCryptoTicker,
+		get vn100Quote() {
+			return vn100Quote
+		},
 		get isCryptoAsset() {
 			return chartAsset in CRYPTO_SYMBOLS
+		},
+		get isStockAsset() {
+			return chartAsset === 'VN100'
 		},
 		get metalsElapsed() {
 			return metalsElapsed
@@ -392,8 +466,20 @@ export function useTickers(initialData: TickersData) {
 		get cryptoElapsed() {
 			return cryptoElapsed
 		},
+		get stocksElapsed() {
+			return stocksElapsed
+		},
 		metalsTtl: METALS_STALE_MS,
 		cryptoTtl: CRYPTO_STALE_MS,
+		get stocksTtl() {
+			// FreshnessDot ratio = elapsed / ttl. During trading ttl ≈ 5 min (same as before);
+			// during closed hours ttl stretches to the next scheduled fetch, so the dot
+			// stays green until we know there's new data.
+			return Math.max(
+				STOCKS_POLL_MS,
+				computeNextPollTime(new Date(lastStocksFetchedAt)).getTime() - lastStocksFetchedAt,
+			)
+		},
 		get chartAsset() {
 			return chartAsset
 		},
@@ -422,6 +508,7 @@ export function useTickers(initialData: TickersData) {
 		forceRefreshAll,
 		refreshMetals: fetchMetals,
 		refreshCrypto: fetchCryptoTickers,
+		refreshStocks: fetchStocks,
 		selectSilver,
 		fetchChart,
 		refreshChart: () => fetchChart(chartAsset, chartDuration, true),
@@ -471,4 +558,16 @@ export const USDT_FORMATTER = {
 	format: formatUSDT,
 	formatCompact: formatUSDTCompact,
 	formatAxis: formatUSDTAxis,
+}
+
+const vn100Fmt = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+export function formatVN100(value: number): string {
+	return vn100Fmt.format(value)
+}
+
+export const VN100_FORMATTER = {
+	format: formatVN100,
+	formatCompact: formatVN100,
+	formatAxis: formatVN100,
 }

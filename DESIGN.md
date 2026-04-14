@@ -6,7 +6,7 @@
 - **What this is:** Collection of personal everyday tools as mini-apps
 - **Who it's for:** Personal use, everyday tools
 - **Project type:** Dark-themed, mobile-first, each mini-app is its own "room" with distinct atmosphere
-- **Mini-apps:** Tickers (gold/silver prices + crypto charts), Weather (local weather with atmospheric UI)
+- **Mini-apps:** Tickers (gold/silver, crypto, VN stock index charts), Weather (local weather with atmospheric UI)
 
 ## Aesthetic Direction
 
@@ -37,6 +37,7 @@
     - Chart axis: 10px (Geist Mono)
     - Card status text: 8px
     - Peak/bottom markers: 9px (Geist Mono)
+    - VN index value: 16px / 700 weight (Geist Mono) — 2 decimals (`1,775.65`), "PTS" unit label
 
 ## Color
 
@@ -55,7 +56,8 @@
 - **BTC accent:** #e8993a — bright orange, closer to BTC brand
 - **ETH accent:** #6b7fcc — saturated blue, closer to ETH brand
 - **SOL accent:** #8a6db8 — deeper violet, closer to SOL brand
-- **Semantic:**
+- **VN100 accent:** #b87333 — antique bronze, tied to VN stock market identity (bronze bull statue aesthetic). Accent only — directional semantics (up/down) stay Western.
+- **Semantic:** (applies to ALL assets — crypto, metals, VN stocks. VN broker UIs offer inverted red=up as a user-configurable preference; our app sticks with Western convention for cross-asset consistency.)
     - Up: #2d9f6f (muted green)
     - Down: #c44e4e (muted red)
     - Spread: #d4874d (warm amber)
@@ -146,7 +148,7 @@
     - Desktop (standard=17px, step=2px): 21→19→17→15→13→11 (1D), 23→21→19→17→15→13 (3D), 25→23→21→19→17→15 (1W)
     - Candle size bonus: 1D=0, 3D=+1×step, 1W=+2×step
     - Tier thresholds use 1D-equivalent candle count (numCandles × sizeFactor) to keep tier stable across candle sizes
-- **Caching:** Client-side Map keyed by asset (always 1Y data), TTL per asset class (15m metals, 5m crypto — matches polling intervals)
+- **Caching:** Client-side Map keyed by asset (always 1Y data), TTL per asset class (15m metals, 5m crypto, phase-aware for VN stocks — TTL stretches across closed hours so chart cache rides through weekends without re-fetching)
 
 ## Data Architecture
 
@@ -156,8 +158,8 @@
 - **Server cache (metals):** Cloudflare Cache API, 60s fresh / 300s stale fallback
 - **Server cache (crypto):** 10s debounce only (dedup rapid-fire requests), no stale fallback — fresh data or 502 error
 - **Clock sync:** Transparent service (`src/lib/clock-sync.ts`) patches Date.now() and new Date() globally. Initial sync via SSR serverTime (10s drift threshold), re-sync every 15 min via /api/clock using NTP-lite (round-trip compensated).
-- **Client polling:** Metals 15 min, crypto 5 min (separate intervals)
-- **Visibility fetch:** On tab resume, fetch both sources if last fetch > 10s ago (per-source debounce)
+- **Client polling:** Metals 15 min, crypto 5 min (separate intervals). VN stocks phase-aware (see VN Stock Data below): 5-min during trading (09–15 ICT), one fetch at 21:00 EOD, drains to next 09:00 ICT otherwise.
+- **Visibility fetch:** On tab resume, fetch metals/crypto if last fetch > 10s ago; stocks only if `Date.now() >= computeNextPollTime(lastFetch)` — respects the schedule, avoids waking SSI on weekends.
 - **Gold prices:** Table API provides per-chỉ prices, × 10 for per-lượng. Both units shown in compact table.
 - **Silver prices:** Table API provides per-unit prices. Sorted small unit first (lượng → kg).
 - **Silver filter:** Excludes BM1OZ and "miếng" (mỹ nghệ) items
@@ -181,6 +183,44 @@
 - **Candle aggregation:** 3D/1W merge pre-built 1D candles (first open, last close, max high, min low)
 - **Layout:** Tabbed card (BTC/ETH/SOL) alongside metals card, side-by-side on tablet+
 - **Accent colors:** Per-coin brand colors (BTC #e8993a, ETH #6b7fcc, SOL #8a6db8)
+
+## VN Stock Data
+
+- **Source:** SSI iBoard — two anonymous REST hosts:
+    - `iboard-query.ssi.com.vn` — real-time quotes, index snapshots (`/exchange-index/VN100`)
+    - `iboard-api.ssi.com.vn` — OHLCV charts (`/statistics/charts/history?resolution=D&symbol=VN100`)
+- **Why SSI:** institutional-grade backend, rides through HOSE's 17:00–21:00 ICT post-close batch window that breaks VNDirect's `api-finfo` (ES shard failures). Envelope `{code:"SUCCESS", data}` on both hosts. Required headers: browser-shaped `User-Agent` + `Origin: https://iboard.ssi.com.vn`.
+- **Symbol:** VN100 only — top 100 HOSE stocks by free-float-adjusted cap, with liquidity and profitability filters, quarterly review, 10% single-stock cap. Selected over VNINDEX to avoid distortion from low-free-float mega-caps and non-profitable tickers. VN30 and VNINDEX available on the same endpoint shape but not currently surfaced.
+- **Spot payload:** single call returns `close, refValue, change, pctChange, high, low, advances, declines, unchanged, totalVolume, totalValue, time` — 13 fields, ~200 bytes. No bar derivation needed (exchange precomputes change vs ref).
+- **Spots endpoint:** `/tickers/api/spots/stocks` → `iboard-query/exchange-index/VN100`
+- **Charts endpoint:** `/tickers/api/charts/stocks` → `iboard-api/statistics/charts/history` (UDF parallel arrays → `OHLCCandle[]`). Midnight-aligned `from` required (daily bars stamped at UTC midnight).
+- **Chart data:** Daily OHLC, 1Y fetch, client-side slice like crypto. No volume axis.
+- **Layout:** Dedicated spot card below crypto row; chart tab labeled "VNI" next to SOL in the chart tab row.
+- **Accent:** `#b87333` (bronze). Used on spot-card tab underline and chart tab underline. Does NOT override up/down directional colors — those stay Western `#2d9f6f` / `#c44e4e`.
+
+### Market schedule (`src/routes/tickers/vn-stock-schedule.ts`)
+
+All times ICT (UTC+7, no DST). Drives both client polling cadence and server cache TTLs.
+
+| Phase | Time range (ICT) | Client next-poll | Server `max-age` |
+|---|---|---|---|
+| pre-open | 00:00–09:00 (Mon–Fri) | today 09:00 | until today 09:00 |
+| trading | 09:00–15:00 (Mon–Fri) | now + 5 min (capped at 15:00 → jumps to 21:00) | 5 min |
+| post-close | 15:00–21:00 (Mon–Fri) | today 21:00 | until today 21:00 |
+| eod-final | 21:00–24:00 (Mon–Thu) | tomorrow 09:00 | until tomorrow 09:00 |
+| eod-final | 21:00–24:00 (Fri) | next Mon 09:00 | until next Mon 09:00 |
+| weekend | Sat / Sun (all day) | next Mon 09:00 | until next Mon 09:00 |
+
+- **VN holidays (Tết, 30/4, 2/9) are NOT modeled** — app polls in vain on those days, upstream serves stale. Accepted trade-off: user doesn't watch markets on holidays.
+- **Server cache TTL:** `max(60s, msUntilNextPoll())` fresh, `fresh + 5min` grace for upstream errors. Emits `Cache-Control: private, max-age=<seconds>` scaled to the phase.
+- **Client polling:** self-rescheduling `setTimeout` (not `setInterval`) — zero wasted wakes during closed hours. Single primitive handles 5-min trading cadence and multi-hour closed drains under one `expiresAt` concept.
+- **FreshnessDot:** TTL dynamic for stocks — stretches to next scheduled fetch during closed hours, so dot stays green through the drain rather than turning stale.
+- **Force refresh:** user-triggered `forceRefreshAll()` bypasses the schedule — always fetches.
+
+### Retired — VNDirect (for reference / if SSI ever falls back)
+
+- `dchart-api.vndirect.com.vn/dchart/history` — TradingView UDF format. Required workarounds: `Accept: */*` (406 on `application/json`), `countback` param ignored, `from` must be UTC-midnight-aligned or narrow windows return empty. Minimum 5-day window to guarantee ≥2 bars.
+- `api-finfo.vndirect.com.vn/v4/stock_prices` — Elasticsearch-backed, flaky during 15:00–21:00 ICT (ES shard failures during EOD batch reindex). Keep as tertiary fallback only.
 
 ## Decisions Log
 
@@ -250,3 +290,15 @@
 | 2026-04-14 | NOW_TICK_MS = 6s (10 updates/min)                        | Animation interval math: 2× longest pulse (3s fresh), above 20upm perceptual floor. Cross-browser research confirmed 1s-6s safe for mobile battery; platform handles background throttling |
 | 2026-04-14 | FreshnessDot debug prop                                  | Optional inline text showing elapsed/ttl/percentage/countdown. Zero-cost when off ($derived early-returns, {#if} block not mounted)                               |
 | 2026-04-14 | Sync `now` on every fetch completion                     | Freshness dots snap to green immediately on fetch success instead of waiting up to 6s for next tick                                                               |
+| 2026-04-14 | Add VN stock index (VN100) to Tickers                  | Daily market glance for a non-trader — one index reflects the whole HOSE market; VN30 deferred as marginal value for "just checking" use case                     |
+| 2026-04-14 | SSI iBoard as primary VN stock data source               | Anonymous, CORS-open, rich payload (ceiling/floor/foreign-room/market-breadth); institutional-grade backend rides through the 15–21 ICT post-close batch window   |
+| 2026-04-14 | Retired VNDirect from tickers after verification         | `api-finfo` returned ES shard failures during post-close window; `dchart` needed `Accept:*/*` + midnight-aligned `from` + 5-day min window workarounds            |
+| 2026-04-14 | Phase-aware VN stock polling schedule                    | 5-min during trading, single fetch at 21:00 ICT EOD (batch finalization), drain until next 09:00 ICT (Fri → Mon). VN holidays intentionally unmodeled            |
+| 2026-04-14 | Self-rescheduling `setTimeout` over `setInterval`         | Unifies 5-min trading cadence and multi-hour closed drains under one `expiresAt` primitive; zero wasted wakes on Saturdays or overnight                           |
+| 2026-04-14 | Server cache TTL follows the same schedule                | `max-age = msUntilNextPoll()` scales from 60s during trading up to ~65h across a weekend — polite to SSI during quiet windows without sacrificing freshness       |
+| 2026-04-14 | FreshnessDot TTL dynamic for VN stocks                   | TTL stretches to next scheduled fetch during closed hours so dot stays green during known-stable drain, not red alarm                                            |
+| 2026-04-14 | VN100 accent #b87333 (antique bronze)                  | Evokes bronze bull statue; distinct from gold #d4a03a and BTC orange #e8993a; accent-only, does not override up/down directional semantics                        |
+| 2026-04-14 | Western green=up / red=down for all assets (explicit)    | VN broker UIs offer inverted red=up as a user preference, not a default — cross-asset consistency beats geography-based semantics                                 |
+| 2026-04-14 | `src/routes/<app>/api/` is server-side scope only        | Shared client+server utilities (e.g. `vn-stock-schedule.ts`) live at the app route root, not under `api/` — keeps the server boundary clean                       |
+| 2026-04-15 | Switch VN index from VNINDEX → VN100                     | VN100 applies free-float weighting, single-stock cap (10%), liquidity + profitability filters, quarterly review — avoids VNINDEX's distortion by low-free-float mega-caps (VCB, VIC, VHM, etc.) and non-profitable tickers. Chart tab row made horizontally scrollable to accommodate longer "VN100" label. |
+| 2026-04-15 | Chart tab row horizontally scrollable                    | Wrapped tabs in `.tickers-chart-tabs-scroll` with `overflow-x: auto` + thin scrollbar, keeping the status indicator pinned via sibling flex. Future-proofs against adding more asset tabs on narrow viewports (360px).                                                                                       |

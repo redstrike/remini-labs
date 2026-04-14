@@ -1,5 +1,13 @@
 <script lang="ts">
-	import { useTickers, formatVND, formatSpread, formatUSDT, USDT_FORMATTER } from './use-tickers.svelte'
+	import {
+		useTickers,
+		formatVND,
+		formatSpread,
+		formatUSDT,
+		formatVN100,
+		USDT_FORMATTER,
+		VN100_FORMATTER,
+	} from './use-tickers.svelte'
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js'
 	import { LoadingOverlay } from '$lib/components/ui/loading-overlay/index.js'
 	import { FreshnessDot } from '$lib/components/ui/freshness-dot/index.js'
@@ -10,11 +18,13 @@
 	// Intentionally capture SSR data once — hook takes over with client-side polling
 	const initialTable = page.data.table ?? null
 	const initialCrypto = page.data.crypto ?? null
-	const tickers = useTickers({ table: initialTable, crypto: initialCrypto })
+	const initialVN100 = page.data.vn100 ?? null
+	const tickers = useTickers({ table: initialTable, crypto: initialCrypto, vn100: initialVN100 })
 
 	// Spinner duration tuned to avg API latency — one full rotation ≈ one fetch
 	const METALS_SPIN_MS = 500 // Phu Quy avg ~400ms
 	const CRYPTO_SPIN_MS = 200 // Binance avg ~120ms
+	const STOCKS_SPIN_MS = 400 // VNDirect avg ~300ms
 
 	const CRYPTO = [
 		{ id: 'BTC' as const, name: 'Bitcoin', accent: '#e8993a' },
@@ -28,6 +38,7 @@
 		BTC: '#e8993a',
 		ETH: '#6b7fcc',
 		SOL: '#8a6db8',
+		VN100: '#b87333',
 	}
 
 	const durations = [
@@ -51,29 +62,30 @@
 	// UI reacts to fetch events — spinner state owned by the page, not the data layer
 	let fetchingMetals = $state(false)
 	let fetchingCrypto = $state(false)
+	let fetchingStocks = $state(false)
 	let fetchingMetalsChart = $state(false)
 	let fetchingCryptoChart = $state(false)
-	const fetchingChart = $derived(tickers.isCryptoAsset ? fetchingCryptoChart : fetchingMetalsChart)
+	let fetchingStocksChart = $state(false)
+	const fetchingChart = $derived(
+		tickers.isCryptoAsset ? fetchingCryptoChart : tickers.isStockAsset ? fetchingStocksChart : fetchingMetalsChart,
+	)
 
 	$effect(() => {
-		const unsub1 = tickers.bus.on('metals:fetching', () => (fetchingMetals = true))
-		const unsub2 = tickers.bus.on('metals:fetched', () => (fetchingMetals = false))
-		const unsub3 = tickers.bus.on('crypto:fetching', () => (fetchingCrypto = true))
-		const unsub4 = tickers.bus.on('crypto:fetched', () => (fetchingCrypto = false))
-		const unsub5 = tickers.bus.on('chart:metals:fetching', () => (fetchingMetalsChart = true))
-		const unsub6 = tickers.bus.on('chart:metals:fetched', () => (fetchingMetalsChart = false))
-		const unsub7 = tickers.bus.on('chart:crypto:fetching', () => (fetchingCryptoChart = true))
-		const unsub8 = tickers.bus.on('chart:crypto:fetched', () => (fetchingCryptoChart = false))
-		return () => {
-			unsub1()
-			unsub2()
-			unsub3()
-			unsub4()
-			unsub5()
-			unsub6()
-			unsub7()
-			unsub8()
-		}
+		const unsubs = [
+			tickers.bus.on('metals:fetching', () => (fetchingMetals = true)),
+			tickers.bus.on('metals:fetched', () => (fetchingMetals = false)),
+			tickers.bus.on('crypto:fetching', () => (fetchingCrypto = true)),
+			tickers.bus.on('crypto:fetched', () => (fetchingCrypto = false)),
+			tickers.bus.on('stocks:fetching', () => (fetchingStocks = true)),
+			tickers.bus.on('stocks:fetched', () => (fetchingStocks = false)),
+			tickers.bus.on('chart:metals:fetching', () => (fetchingMetalsChart = true)),
+			tickers.bus.on('chart:metals:fetched', () => (fetchingMetalsChart = false)),
+			tickers.bus.on('chart:crypto:fetching', () => (fetchingCryptoChart = true)),
+			tickers.bus.on('chart:crypto:fetched', () => (fetchingCryptoChart = false)),
+			tickers.bus.on('chart:stocks:fetching', () => (fetchingStocksChart = true)),
+			tickers.bus.on('chart:stocks:fetched', () => (fetchingStocksChart = false)),
+		]
+		return () => unsubs.forEach((fn) => fn())
 	})
 </script>
 
@@ -263,21 +275,82 @@
 					</div>
 				{/if}
 			</div>
+
+			<!-- VN100 Card -->
+			<div class="tickers-card">
+				<div class="tickers-card-header">
+					<div class="tickers-card-tabs">
+						<button class="tickers-card-tab active-vn100" style:--vn100-accent="#b87333"> VN100 </button>
+					</div>
+					<div class="tickers-card-status">
+						<FreshnessDot elapsed={tickers.stocksElapsed} ttl={tickers.stocksTtl} />
+						<button
+							class="tickers-card-refresh"
+							onclick={() => tickers.refreshStocks()}
+							disabled={fetchingStocks}
+							title="Refresh VN100">
+							<SpinnerIcon
+								size={10}
+								class={fetchingStocks ? 'tickers-spinner' : ''}
+								style={fetchingStocks ? `animation-duration: ${STOCKS_SPIN_MS}ms` : ''} />
+						</button>
+					</div>
+				</div>
+
+				{#if tickers.vn100Quote}
+					{@const q = tickers.vn100Quote}
+					{@const up = q.change >= 0}
+					<div class="tickers-price-row">
+						<span class="tickers-price-label">Close</span>
+						<div class="tickers-price-value-wrap">
+							<span class="tickers-price-value tickers-crypto-price">{formatVN100(q.close)}</span>
+							<span class="tickers-price-unit">PTS</span>
+						</div>
+					</div>
+					<div class="tickers-price-row">
+						<span class="tickers-price-label">Change</span>
+						<div class="tickers-price-value-wrap">
+							<span class="tickers-crypto-change" class:up class:down={!up}>
+								{up ? '+' : ''}{formatVN100(q.change)}
+							</span>
+							<span class="tickers-crypto-pct" class:up class:down={!up}>
+								({up ? '+' : ''}{q.pctChange.toFixed(2)}%)
+							</span>
+						</div>
+					</div>
+					<div class="tickers-crypto-range">
+						<span class="tickers-crypto-range-pair">
+							<span class="tickers-crypto-range-label">L</span>
+							<span class="tickers-crypto-range-value">{formatVN100(q.low)}</span>
+						</span>
+						<span class="tickers-crypto-range-pair">
+							<span class="tickers-crypto-range-label">H</span>
+							<span class="tickers-crypto-range-value">{formatVN100(q.high)}</span>
+						</span>
+					</div>
+				{:else}
+					<div class="tickers-price-row">
+						<Skeleton class="h-6 w-32" />
+					</div>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Historical Chart -->
 		<div class="tickers-chart-section">
 			<div class="tickers-chart-header">
 				<div class="tickers-chart-tabs">
-					{#each [{ id: 'gold' as const, label: 'Gold', accent: '#c9a84c' }, { id: 'silver' as const, label: 'Silver', accent: '#8a94a8' }, ...CRYPTO.map( (c) => ({ id: c.id, label: c.id, accent: c.accent }), )] as tab}
-						<button
-							class="tickers-chart-tab"
-							class:active={tickers.chartAsset === tab.id}
-							style:--tab-accent={tab.accent}
-							onclick={() => tickers.fetchChart(tab.id, tickers.chartDuration)}>
-							{tab.label}
-						</button>
-					{/each}
+					<div class="tickers-chart-tabs-scroll">
+						{#each [{ id: 'gold' as const, label: 'Gold', accent: '#c9a84c' }, { id: 'silver' as const, label: 'Silver', accent: '#8a94a8' }, ...CRYPTO.map( (c) => ({ id: c.id, label: c.id, accent: c.accent }), ), { id: 'VN100' as const, label: 'VN100', accent: '#b87333' }] as tab}
+							<button
+								class="tickers-chart-tab"
+								class:active={tickers.chartAsset === tab.id}
+								style:--tab-accent={tab.accent}
+								onclick={() => tickers.fetchChart(tab.id, tickers.chartDuration)}>
+								{tab.label}
+							</button>
+						{/each}
+					</div>
 					<div class="tickers-chart-status">
 						<FreshnessDot elapsed={tickers.chartElapsed} ttl={tickers.chartTtl} />
 						<button
@@ -332,7 +405,11 @@
 						<PriceChart
 							data={tickers.chartData}
 							accentColor={CHART_ACCENTS[tickers.chartAsset] ?? '#e8e6e3'}
-							priceFormatter={tickers.isCryptoAsset ? USDT_FORMATTER : undefined}
+							priceFormatter={tickers.isCryptoAsset
+								? USDT_FORMATTER
+								: tickers.isStockAsset
+									? VN100_FORMATTER
+									: undefined}
 							{candleSize} />
 					{:else}
 						<div class="tickers-chart-placeholder">
@@ -468,6 +545,11 @@
 	.tickers-card-tab.active-crypto {
 		color: var(--crypto-accent);
 		border-bottom-color: var(--crypto-accent);
+	}
+	.tickers-card-tab.active-vn100 {
+		color: var(--vn100-accent);
+		border-bottom-color: var(--vn100-accent);
+		cursor: default;
 	}
 
 	/* Metal prices — compact table: unit | buy | sell */
@@ -629,6 +711,20 @@
 		border-bottom: 1px solid #2a2a36;
 		gap: 0;
 	}
+	/* Scrollable tab group — keeps status indicator pinned on overflow */
+	.tickers-chart-tabs-scroll {
+		display: flex;
+		flex: 1 1 0;
+		min-width: 0;
+		overflow-x: auto;
+		scrollbar-width: thin;
+	}
+	.tickers-chart-tabs-scroll::-webkit-scrollbar {
+		height: 2px;
+	}
+	.tickers-chart-tabs-scroll::-webkit-scrollbar-thumb {
+		background: #2a2a36;
+	}
 	.tickers-chart-status {
 		display: flex;
 		align-items: center;
@@ -689,6 +785,7 @@
 		font-weight: 600;
 	}
 	.tickers-chart-tab {
+		flex-shrink: 0;
 		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
 		font-size: 11px;
 		font-weight: 500;
