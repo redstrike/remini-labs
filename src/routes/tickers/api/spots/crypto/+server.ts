@@ -7,7 +7,7 @@ const CACHE_KEY = 'https://remini-labs.internal/tickers/api/spots/crypto'
 const DEBOUNCE_TTL = 10 // seconds — dedup rapid-fire requests, not a freshness cache
 
 export const GET: RequestHandler = async () => {
-	const cache = typeof caches !== 'undefined' ? await caches.open('tickers') : null
+	const cache = (await globalThis.caches?.open('tickers')) ?? null
 
 	if (cache) {
 		const cached = await cache.match(CACHE_KEY)

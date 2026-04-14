@@ -13,7 +13,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	const cacheKey = `https://remini-labs.internal/tickers/api/charts/crypto?symbol=${symbol}`
-	const cache = typeof caches !== 'undefined' ? await caches.open('tickers') : null
+	const cache = (await globalThis.caches?.open('tickers')) ?? null
 
 	if (cache) {
 		const cached = await cache.match(cacheKey)

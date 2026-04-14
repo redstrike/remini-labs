@@ -8,7 +8,7 @@ const CACHE_TTL = 60
 const STALE_TTL = 300
 
 export const GET: RequestHandler = async () => {
-	const cache = typeof caches !== 'undefined' ? await caches.open('tickers') : null
+	const cache = (await globalThis.caches?.open('tickers')) ?? null
 
 	// Check cache — only use if within TTL (stored in X-Cached-At header)
 	if (cache) {
