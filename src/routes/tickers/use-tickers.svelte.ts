@@ -1,7 +1,12 @@
 import { browser } from '$app/environment'
 import { createEventBus } from '$lib/event-bus'
 
-import type { CryptoTicker, CryptoSymbol } from './api/binance-client'
+import {
+	fetchCryptoTickers as fetchBinanceTickers,
+	fetchCryptoKlines,
+	type CryptoTicker,
+	type CryptoSymbol,
+} from './api/binance-client'
 import type { PriceTable, ChartData } from './api/phuquy-client'
 import type { IndexQuote } from './api/ssi-iboard-client'
 import { STOCKS_POLL_MS, computeNextPollTime, msUntilNextPoll } from './vn-stock-schedule'
@@ -26,10 +31,10 @@ type TickersEvents = {
 // Polling intervals — how often to fetch fresh data
 const METALS_POLL_MS = 15 * 60 * 1000 // 15 min — Phu Quy prices move slowly
 const CRYPTO_POLL_MS = 5 * 60 * 1000 // 5 min — Binance prices move faster
-// STOCKS_POLL_MS is imported from vn-stock-schedule — stocks follow a phase-aware schedule
-// (5 min during trading; drains until next 09:00 ICT / 21:00 EOD otherwise).
+// STOCKS_POLL_MS — imported from vn-stock-schedule. Phase-aware schedule:
+// 5 min during trading; drains until next 09:00 ICT / 21:00 EOD otherwise.
 
-// The single VN stock symbol the app tracks today. Becomes state when the watchlist feature lands.
+// Single VN stock symbol the app tracks — becomes state when watchlist lands.
 const STOCK_SYMBOL = 'VN100'
 
 // Freshness thresholds — dot turns amber/red when exceeded
@@ -94,17 +99,16 @@ export function useTickers(initialData: TickersData) {
 		return () => clearInterval(interval)
 	})
 
-	// Poll crypto every 5 min — client only
+	// Poll crypto every 5 min — client only. Initial data comes from SSR.
 	$effect(() => {
 		if (!browser) return
 		const interval = setInterval(fetchCryptoTickers, CRYPTO_POLL_MS)
 		return () => clearInterval(interval)
 	})
 
-	// Poll VN100 per the VN market schedule — client only.
-	// Self-rescheduling setTimeout fires at the next meaningful transition
-	// (next 5-min tick during trading; 21:00 EOD on weekday closed hours;
-	//  next Mon 09:00 on weekends). Zero wasted wakes during closed windows.
+	// Poll VN100 on the VN market schedule — client only. Self-rescheduling setTimeout
+	// fires at each meaningful transition (5-min tick during trading, 21:00 EOD weekdays,
+	// Mon 09:00 on weekends). Zero wasted wakes during closed windows.
 	$effect(() => {
 		if (!browser) return
 		let timer: ReturnType<typeof setTimeout> | null = null
@@ -130,8 +134,7 @@ export function useTickers(initialData: TickersData) {
 			now = Date.now()
 			if (now - lastMetalsFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchMetals()
 			if (now - lastCryptoFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchCryptoTickers()
-			// Stocks: respect the schedule — only refetch once the scheduled next-poll time
-			// has passed since the last successful fetch. Avoids waking SSI on a Saturday.
+			// Stocks: refetch only once scheduled next-poll time has passed — skip closed days.
 			const nextStocksPoll = computeNextPollTime(new Date(lastStocksFetchedAt)).getTime()
 			if (now >= nextStocksPoll) fetchStocks()
 		}
@@ -169,7 +172,7 @@ export function useTickers(initialData: TickersData) {
 
 	const selectedSilver = $derived(silverItems[selectedSilverIdx] ?? silverItems[0] ?? null)
 
-	// Crypto tickers
+	// Crypto tickers — SSR-primed; client polls Binance directly every CRYPTO_POLL_MS.
 	let cryptoTickers = $state<CryptoTicker[]>(initialData.crypto ?? [])
 
 	function getCryptoTicker(id: CryptoId): CryptoTicker | null {
@@ -181,15 +184,10 @@ export function useTickers(initialData: TickersData) {
 	async function fetchCryptoTickers() {
 		bus.emit('crypto:fetching', undefined as void)
 		try {
-			const res = await fetch('/tickers/api/spots/crypto')
-			if (res.ok) {
-				cryptoTickers = await res.json()
-				now = lastCryptoFetchedAt = Date.now()
-				bus.emit('crypto:fetched', { ok: true })
-				if (chartAsset in CRYPTO_SYMBOLS) autoRefreshChart()
-			} else {
-				bus.emit('crypto:fetched', { ok: false, error: `API returned ${res.status}` })
-			}
+			cryptoTickers = await fetchBinanceTickers()
+			now = lastCryptoFetchedAt = Date.now()
+			bus.emit('crypto:fetched', { ok: true })
+			if (chartAsset in CRYPTO_SYMBOLS) autoRefreshChart()
 		} catch (e) {
 			console.error('Crypto ticker fetch error:', e)
 			bus.emit('crypto:fetched', { ok: false, error: (e as Error).message })
@@ -388,9 +386,7 @@ export function useTickers(initialData: TickersData) {
 				data = { changeRate: raw.changeRate, points: [], candles: raw.candles }
 			} else if (asset in CRYPTO_SYMBOLS) {
 				const symbol = CRYPTO_SYMBOLS[asset as CryptoId]
-				const res = await fetch(`/tickers/api/charts/crypto?symbol=${symbol}`)
-				if (!res.ok) throw new Error(`API returned ${res.status}`)
-				const raw = await res.json()
+				const raw = await fetchCryptoKlines(symbol)
 				data = { changeRate: raw.changeRate, points: [], candles: raw.candles }
 			} else {
 				const categoryId = asset === 'gold' ? 1 : 2
@@ -472,9 +468,9 @@ export function useTickers(initialData: TickersData) {
 		metalsTtl: METALS_STALE_MS,
 		cryptoTtl: CRYPTO_STALE_MS,
 		get stocksTtl() {
-			// FreshnessDot ratio = elapsed / ttl. During trading ttl ≈ 5 min (same as before);
-			// during closed hours ttl stretches to the next scheduled fetch, so the dot
-			// stays green until we know there's new data.
+			// FreshnessDot ratio = elapsed / ttl. During trading ttl ≈ 5 min;
+			// during closed hours ttl stretches to the next scheduled fetch so
+			// the dot stays green until new data arrives.
 			return Math.max(
 				STOCKS_POLL_MS,
 				computeNextPollTime(new Date(lastStocksFetchedAt)).getTime() - lastStocksFetchedAt,

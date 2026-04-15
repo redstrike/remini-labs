@@ -1,7 +1,8 @@
-const BASE_URL = 'https://api.binance.com/api/v3'
+// Binance's GCP mirror — other hosts are unreliable from our Cloudflare Workers runtime.
+// Used for both browser and server calls so SSR and live-polled prices stay consistent.
+const BASE_URL = 'https://api-gcp.binance.com/api/v3'
 
 const HEADERS = {
-	'User-Agent': 'ReminiLabs/1.0',
 	Accept: 'application/json',
 }
 
