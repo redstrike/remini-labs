@@ -1,38 +1,30 @@
-import { json } from '@sveltejs/kit'
+import { error, json } from '@sveltejs/kit'
 
 import { fetchCryptoTickers } from '../../binance-client'
+import { probeCache } from '../../cache'
 import type { RequestHandler } from './$types'
 
 const CACHE_KEY = 'https://remini-labs.internal/tickers/api/spots/crypto'
-const DEBOUNCE_TTL = 10 // seconds — dedup rapid-fire requests, not a freshness cache
+const DEBOUNCE_TTL = 60 // seconds — dedup rapid-fire requests and cap our Binance API hit rate
+const STALE_RETENTION = 3600 // seconds — keep entries around for stale-on-error fallback
 
 export const GET: RequestHandler = async () => {
-	const cache = (await globalThis.caches?.open('tickers')) ?? null
-
-	if (cache) {
-		const cached = await cache.match(CACHE_KEY)
-		if (cached) {
-			const cachedAt = Number(cached.headers.get('X-Cached-At') || 0)
-			if (Date.now() - cachedAt < DEBOUNCE_TTL * 1000) return cached.clone()
-		}
-	}
+	const { debounced, cached, cache } = await probeCache(CACHE_KEY, DEBOUNCE_TTL)
+	if (debounced) return debounced
 
 	try {
 		const tickers = await fetchCryptoTickers()
 		const response = json(tickers, {
 			headers: {
-				'Cache-Control': `private, max-age=${DEBOUNCE_TTL}`,
+				'Cache-Control': `public, s-maxage=${STALE_RETENTION}, max-age=0, stale-if-error=${STALE_RETENTION}`,
 				'X-Cached-At': String(Date.now()),
 			},
 		})
-
-		if (cache) {
-			await cache.put(CACHE_KEY, response.clone())
-		}
-
+		if (cache) await cache.put(CACHE_KEY, response.clone())
 		return response
 	} catch (e) {
+		if (cached) return cached // both mirrors dead — serve whatever's still cached
 		console.error('Binance ticker API error:', e)
-		return json({ error: 'Unable to fetch crypto prices' }, { status: 502 })
+		error(502, 'crypto upstream unavailable')
 	}
 }

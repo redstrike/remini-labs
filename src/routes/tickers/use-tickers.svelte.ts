@@ -61,8 +61,14 @@ const CRYPTO_SYMBOLS: Record<CryptoId, CryptoSymbol> = {
 interface TickersData {
 	table: PriceTable | null
 	crypto: CryptoTicker[] | null
+	cryptoCachedAt: number // epoch ms from SSR's X-Cached-At; 0 when SSR errored
 	vn100: IndexQuote | null
 }
+
+// Matches server's DEBOUNCE_TTL. An SSR response older than this means the server served
+// a stale-fallback (both Binance mirrors were unreachable during SSR) — trigger an
+// immediate refetch on mount to try again from the client's IP.
+const SSR_FRESHNESS_MS = 60 * 1000
 
 export function useTickers(initialData: TickersData) {
 	const bus = createEventBus<TickersEvents>()
@@ -100,8 +106,12 @@ export function useTickers(initialData: TickersData) {
 	})
 
 	// Poll crypto every 5 min — client only. Initial data comes from SSR.
+	// On mount: if SSR data is stale (older than server's debounce window) or missing
+	// (SSR errored), trigger an immediate Binance fetch rather than wait for the poll.
 	$effect(() => {
 		if (!browser) return
+		const ssrStale = !initialData.cryptoCachedAt || Date.now() - initialData.cryptoCachedAt > SSR_FRESHNESS_MS
+		if (ssrStale) fetchCryptoTickers()
 		const interval = setInterval(fetchCryptoTickers, CRYPTO_POLL_MS)
 		return () => clearInterval(interval)
 	})
@@ -179,7 +189,9 @@ export function useTickers(initialData: TickersData) {
 		return cryptoTickers.find((t) => t.symbol === CRYPTO_SYMBOLS[id]) ?? null
 	}
 
-	let lastCryptoFetchedAt = $state(Date.now())
+	// Seeded from SSR's X-Cached-At so the freshness dot reflects actual data age.
+	// Falls back to Date.now() when SSR errored (immediate refetch will correct it).
+	let lastCryptoFetchedAt = $state(initialData.cryptoCachedAt || Date.now())
 
 	async function fetchCryptoTickers() {
 		bus.emit('crypto:fetching', undefined as void)

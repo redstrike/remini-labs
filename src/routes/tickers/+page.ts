@@ -20,10 +20,13 @@ export const load = async ({ fetch }) => {
 		])
 		const table: PriceTable | null = tableRes.ok ? await tableRes.json() : null
 		const crypto: CryptoTicker[] | null = cryptoRes.ok ? await cryptoRes.json() : null
+		// Server stamps X-Cached-At on success (fresh or stale-fallback). 0 means SSR errored —
+		// client treats that as stale and triggers an immediate refetch on mount.
+		const cryptoCachedAt = cryptoRes.ok ? Number(cryptoRes.headers.get('X-Cached-At') || 0) : 0
 		const vn100: IndexQuote | null = vn100Res.ok ? await vn100Res.json() : null
 
-		return { meta: { appName: 'Tickers' }, table, crypto, vn100 }
+		return { meta: { appName: 'Tickers' }, table, crypto, cryptoCachedAt, vn100 }
 	} catch {
-		return { meta: { appName: 'Tickers' }, table: null, crypto: null, vn100: null }
+		return { meta: { appName: 'Tickers' }, table: null, crypto: null, cryptoCachedAt: 0, vn100: null }
 	}
 }

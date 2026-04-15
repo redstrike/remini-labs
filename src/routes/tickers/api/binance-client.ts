@@ -1,6 +1,13 @@
-// Binance's GCP mirror — other hosts are unreliable from our Cloudflare Workers runtime.
-// Used for both browser and server calls so SSR and live-polled prices stay consistent.
-const BASE_URL = 'https://api-gcp.binance.com/api/v3'
+// Binance mirrors — api-gcp is primary (reliably reachable from CF Workers); api (AWS)
+// is the documented fallback. Either can flip to IP-pool-blocked without notice, so we
+// try the active one, retry the other on block signals, and stick on whichever succeeded.
+const BASES = ['https://api-gcp.binance.com', 'https://api.binance.com']
+
+// Sticky preferred-base index, per V8 isolate. Flips on fallback success; a new isolate
+// starts at 0 and re-learns on first block. Cost of re-learn: one extra fetch per isolate
+// per outage — negligible at our traffic, and it's the only layer we need since the Cache
+// API debounce absorbs within-colo bursts anyway.
+let activeIdx = 0
 
 const HEADERS = {
 	Accept: 'application/json',
@@ -68,13 +75,43 @@ function withTimeout(url: string, init?: RequestInit): Promise<Response> {
 		.finally(() => clearTimeout(timeout))
 }
 
+// 403/451 = CF egress block signature from Binance's edge. 429/5xx are Binance-side and
+// shared by both mirrors, so we do NOT fall back on those.
+function isBlockStatus(status: number): boolean {
+	return status === 403 || status === 451
+}
+
+// AbortError = our timeout tripped; TypeError = Workers fetch surfaced a network failure.
+// Either means this mirror is effectively unreachable right now — try the other.
+function isNetworkBlock(err: unknown): boolean {
+	return err instanceof Error && (err.name === 'AbortError' || err.name === 'TypeError')
+}
+
+async function binanceFetch(path: string): Promise<Response> {
+	let lastErr: unknown = null
+	for (let attempt = 0; attempt < BASES.length; attempt++) {
+		const idx = (activeIdx + attempt) % BASES.length
+		try {
+			const res = await withTimeout(`${BASES[idx]}/api/v3${path}`)
+			if (isBlockStatus(res.status) && attempt < BASES.length - 1) continue
+			if (attempt > 0) activeIdx = idx // fallback succeeded — stick on this mirror
+			return res
+		} catch (err) {
+			lastErr = err
+			if (isNetworkBlock(err) && attempt < BASES.length - 1) continue
+			throw err
+		}
+	}
+	throw lastErr ?? new Error('binanceFetch: all mirrors blocked')
+}
+
 // --- Public API ---
 
-export const ALL_SYMBOLS: CryptoSymbol[] = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
+const ALL_SYMBOLS: CryptoSymbol[] = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
 
 export async function fetchCryptoTickers(symbols: CryptoSymbol[] = ALL_SYMBOLS): Promise<CryptoTicker[]> {
 	const encoded = encodeURIComponent(JSON.stringify(symbols))
-	const res = await withTimeout(`${BASE_URL}/ticker/24hr?symbols=${encoded}`)
+	const res = await binanceFetch(`/ticker/24hr?symbols=${encoded}`)
 	if (!res.ok) throw new Error(`Binance API returned ${res.status}`)
 
 	const data: BinanceTicker[] = await res.json()
@@ -94,7 +131,7 @@ export async function fetchCryptoTickers(symbols: CryptoSymbol[] = ALL_SYMBOLS):
 }
 
 export async function fetchCryptoKlines(symbol: CryptoSymbol, limit = 365): Promise<CryptoChartData> {
-	const res = await withTimeout(`${BASE_URL}/klines?symbol=${symbol}&interval=1d&limit=${limit}`)
+	const res = await binanceFetch(`/klines?symbol=${symbol}&interval=1d&limit=${limit}`)
 	if (!res.ok) throw new Error(`Binance API returned ${res.status}`)
 
 	const data: BinanceKline[] = await res.json()

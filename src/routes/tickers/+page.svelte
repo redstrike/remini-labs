@@ -18,8 +18,14 @@
 	// Intentionally capture SSR data once — hook takes over with client-side polling
 	const initialTable = page.data.table ?? null
 	const initialCrypto = page.data.crypto ?? null
+	const initialCryptoCachedAt = page.data.cryptoCachedAt ?? 0
 	const initialVN100 = page.data.vn100 ?? null
-	const tickers = useTickers({ table: initialTable, crypto: initialCrypto, vn100: initialVN100 })
+	const tickers = useTickers({
+		table: initialTable,
+		crypto: initialCrypto,
+		cryptoCachedAt: initialCryptoCachedAt,
+		vn100: initialVN100,
+	})
 
 	// Spinner duration tuned to avg API latency — one full rotation ≈ one fetch
 	const METALS_SPIN_MS = 500 // Phu Quy avg ~400ms
