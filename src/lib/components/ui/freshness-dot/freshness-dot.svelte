@@ -46,24 +46,24 @@
 		height: 6px;
 		min-width: 6px;
 		min-height: 6px;
-		border-radius: 9999px;
+		border-radius: var(--rl-radius-full);
 		flex-shrink: 0;
 		animation: pulse var(--pulse-speed) infinite;
 	}
 	.freshness-dot.fresh {
-		background: #34d399;
+		background: var(--rl-color-state-fresh);
 		--pulse-speed: 3s;
 	}
 	.freshness-dot.good {
-		background: #f0c850;
+		background: var(--rl-color-state-good);
 		--pulse-speed: 2s;
 	}
 	.freshness-dot.aging {
-		background: #e8993a;
+		background: var(--rl-color-state-aging);
 		--pulse-speed: 1.5s;
 	}
 	.freshness-dot.stale {
-		background: #ef4444;
+		background: var(--rl-color-state-stale);
 		--pulse-speed: 0.75s;
 	}
 	@keyframes pulse {
@@ -78,12 +78,12 @@
 	.freshness-debug {
 		display: inline-flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--rl-space-sm);
 	}
 	.freshness-debug-text {
-		font-family: 'Geist Mono', monospace;
+		font-family: var(--rl-font-mono);
 		font-size: 9px;
-		color: #a0a0ac;
+		color: var(--rl-color-text-muted);
 		white-space: nowrap;
 	}
 </style>

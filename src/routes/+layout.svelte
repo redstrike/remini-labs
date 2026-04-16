@@ -28,7 +28,7 @@
 		name="description"
 		content="Remini Labs — experimental mini-apps by redstrike (Tung Nguyen), crafted with Claude Code (Opus 4.6 / Sonnet 4.6), Antigravity (Gemini 3.1 Pro). Notable everyday mini-apps: gold/silver tickers, local weather, and more." />
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-	<meta name="theme-color" content="#0D0E14" />
+	<meta name="theme-color" content="#08080c" />
 </svelte:head>
 
 <Sidebar.Provider bind:open={sidebarOpen}>

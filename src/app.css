@@ -4,73 +4,183 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
-	--radius: 0.625rem;
-	--background: oklch(1 0 0);
-	--foreground: oklch(0.129 0.042 264.695);
-	--card: oklch(1 0 0);
-	--card-foreground: oklch(0.129 0.042 264.695);
-	--popover: oklch(1 0 0);
-	--popover-foreground: oklch(0.129 0.042 264.695);
-	--primary: oklch(0.208 0.042 265.755);
-	--primary-foreground: oklch(0.984 0.003 247.858);
-	--secondary: oklch(0.968 0.007 247.896);
-	--secondary-foreground: oklch(0.208 0.042 265.755);
-	--muted: oklch(0.968 0.007 247.896);
-	--muted-foreground: oklch(0.554 0.046 257.417);
-	--accent: oklch(0.968 0.007 247.896);
-	--accent-foreground: oklch(0.208 0.042 265.755);
-	--destructive: oklch(0.577 0.245 27.325);
-	--border: oklch(0.929 0.013 255.508);
-	--input: oklch(0.929 0.013 255.508);
-	--ring: oklch(0.704 0.04 256.788);
-	--chart-1: oklch(0.646 0.222 41.116);
-	--chart-2: oklch(0.6 0.118 184.704);
-	--chart-3: oklch(0.398 0.07 227.392);
-	--chart-4: oklch(0.828 0.189 84.429);
-	--chart-5: oklch(0.769 0.188 70.08);
-	--sidebar: oklch(0.984 0.003 247.858);
-	--sidebar-foreground: oklch(0.129 0.042 264.695);
-	--sidebar-primary: oklch(0.208 0.042 265.755);
-	--sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-	--sidebar-accent: oklch(0.968 0.007 247.896);
-	--sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-	--sidebar-border: oklch(0.929 0.013 255.508);
-	--sidebar-ring: oklch(0.704 0.04 256.788);
-}
+/* ============================================================================
+   Remini Labs — design tokens
+   ----------------------------------------------------------------------------
+   Two-tier system:
+     1. PRIMITIVES (--rl-color-gray-*, raw values) — never used directly.
+     2. SEMANTICS (--rl-color-bg, --rl-color-text, etc.) — what components
+        consume. Mini-apps rebind semantics inside their @scope block.
+   Mini-app rebinding flows through CSS variable inheritance — no @layer dance
+   needed; .tickers-root has higher specificity than :root.
+   Dark-only today. Light mode would add a [data-theme="light"] block here.
+   ============================================================================ */
 
-.dark {
-	--background: oklch(0.129 0.042 264.695);
-	--foreground: oklch(0.984 0.003 247.858);
-	--card: oklch(0.208 0.042 265.755);
-	--card-foreground: oklch(0.984 0.003 247.858);
-	--popover: oklch(0.208 0.042 265.755);
-	--popover-foreground: oklch(0.984 0.003 247.858);
-	--primary: oklch(0.929 0.013 255.508);
-	--primary-foreground: oklch(0.208 0.042 265.755);
-	--secondary: oklch(0.279 0.041 260.031);
-	--secondary-foreground: oklch(0.984 0.003 247.858);
-	--muted: oklch(0.279 0.041 260.031);
-	--muted-foreground: oklch(0.704 0.04 256.788);
-	--accent: oklch(0.279 0.041 260.031);
-	--accent-foreground: oklch(0.984 0.003 247.858);
-	--destructive: oklch(0.704 0.191 22.216);
-	--border: oklch(1 0 0 / 10%);
-	--input: oklch(1 0 0 / 15%);
-	--ring: oklch(0.551 0.027 264.364);
-	--chart-1: oklch(0.488 0.243 264.376);
-	--chart-2: oklch(0.696 0.17 162.48);
-	--chart-3: oklch(0.769 0.188 70.08);
-	--chart-4: oklch(0.627 0.265 303.9);
-	--chart-5: oklch(0.645 0.246 16.439);
-	--sidebar: oklch(0.208 0.042 265.755);
-	--sidebar-foreground: oklch(0.984 0.003 247.858);
-	--sidebar-primary: oklch(0.488 0.243 264.376);
-	--sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-	--sidebar-accent: oklch(0.279 0.041 260.031);
-	--sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-	--sidebar-border: oklch(1 0 0 / 10%);
-	--sidebar-ring: oklch(0.551 0.027 264.364);
+:root {
+	/* ─── PRIMITIVE: warm-leaning gray ramp, OLED-optimized ─── */
+	--rl-color-gray-950: #08080c; /* near-true-black, OLED power-optimal */
+	--rl-color-gray-900: #11111a; /* surface lift */
+	--rl-color-gray-800: #1c1c28; /* surface raised, hover */
+	--rl-color-gray-700: #2a2a36; /* border */
+	--rl-color-gray-600: #3a3a48; /* border strong */
+	--rl-color-gray-500: #6a6a72; /* faint text floor — AA on bg */
+	--rl-color-gray-400: #82828a; /* subtle text */
+	--rl-color-gray-300: #a0a0a8; /* muted text */
+	--rl-color-gray-200: #c8c6c3; /* secondary text */
+	--rl-color-gray-100: #e8e6e3; /* primary text — warm off-white, no glare */
+	--rl-color-gray-50: #f0eeeb; /* highest emphasis, rare */
+
+	/* ─── PRIMITIVE: status hues (used by shell semantics) ─── */
+	--rl-color-green-500: #2d9f6f;
+	--rl-color-amber-500: #d4874d;
+	--rl-color-red-500: #c44e4e;
+	--rl-color-emerald-400: #34d399;
+	--rl-color-yellow-400: #f0c850;
+	--rl-color-orange-400: #e8993a;
+	--rl-color-red-400: #ef4444;
+
+	/* ─── SEMANTIC: surfaces ─── */
+	--rl-color-bg: var(--rl-color-gray-950);
+	--rl-color-surface: var(--rl-color-gray-900);
+	--rl-color-surface-raised: var(--rl-color-gray-800);
+	--rl-color-border: var(--rl-color-gray-700);
+	--rl-color-border-strong: var(--rl-color-gray-600);
+
+	/* ─── SEMANTIC: text tiers (5 — all WCAG AA+ on bg) ─── */
+	--rl-color-text: var(--rl-color-gray-100); /* primary       ~16:1 */
+	--rl-color-text-secondary: var(--rl-color-gray-200); /* labels    ~12:1 */
+	--rl-color-text-muted: var(--rl-color-gray-300); /* helpers     ~9:1 */
+	--rl-color-text-subtle: var(--rl-color-gray-400); /* meta        ~6:1 */
+	--rl-color-text-faint: var(--rl-color-gray-500); /* lowest    ~4.7:1 */
+
+	/* ─── SEMANTIC: status colors (success/warning/danger) ─── */
+	--rl-color-success: var(--rl-color-green-500);
+	--rl-color-warning: var(--rl-color-amber-500);
+	--rl-color-danger: var(--rl-color-red-500);
+	--rl-color-success-bg: rgba(45, 159, 111, 0.1);
+	--rl-color-warning-bg: rgba(212, 135, 77, 0.1);
+	--rl-color-danger-bg: rgba(196, 78, 78, 0.1);
+
+	/* ─── SEMANTIC: data freshness states (shared FreshnessDot) ─── */
+	--rl-color-state-fresh: var(--rl-color-emerald-400);
+	--rl-color-state-good: var(--rl-color-yellow-400);
+	--rl-color-state-aging: var(--rl-color-orange-400);
+	--rl-color-state-stale: var(--rl-color-red-400);
+
+	/* ─── Spacing (DESIGN.md t-shirt scale, 4px base) ─── */
+	--rl-space-0: 0;
+	--rl-space-2xs: 2px;
+	--rl-space-xs: 4px;
+	--rl-space-sm: 8px;
+	--rl-space-md: 16px;
+	--rl-space-lg: 24px;
+	--rl-space-xl: 32px;
+	--rl-space-2xl: 48px;
+	--rl-space-3xl: 64px;
+
+	/* ─── Radius ─── */
+	--rl-radius-sm: 4px;
+	--rl-radius-md: 6px;
+	--rl-radius-lg: 12px;
+	--rl-radius-full: 9999px;
+
+	/* ─── Text size (covers 10–32px; sub-10 stays inline) ─── */
+	--rl-text-2xs: 10px;
+	--rl-text-xs: 11px;
+	--rl-text-sm: 12px;
+	--rl-text-base: 14px;
+	--rl-text-md: 16px;
+	--rl-text-lg: 18px;
+	--rl-text-xl: 20px;
+	--rl-text-2xl: 24px;
+	--rl-text-3xl: 32px;
+
+	/* ─── Font weight ─── */
+	--rl-font-normal: 400;
+	--rl-font-medium: 500;
+	--rl-font-semibold: 600;
+	--rl-font-bold: 700;
+
+	/* ─── Font family ─── */
+	--rl-font-sans: 'Geist', 'Geist Sans', system-ui, sans-serif;
+	--rl-font-mono: 'Geist Mono', 'GeistMono', monospace;
+
+	/* ─── Duration (DESIGN.md named scale) ─── */
+	--rl-duration-micro: 75ms;
+	--rl-duration-short: 150ms;
+	--rl-duration-medium: 250ms;
+	--rl-duration-long: 400ms;
+
+	/* ─── Easing (DESIGN.md semantic intent) ─── */
+	--rl-ease-enter: cubic-bezier(0, 0, 0.2, 1);
+	--rl-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+	--rl-ease-move: cubic-bezier(0.4, 0, 0.2, 1);
+	--rl-ease-linear: linear;
+
+	/* ─── Breakpoints (consume in @media + @container) ─── */
+	--rl-breakpoint-phone: 360px;
+	--rl-breakpoint-tablet: 720px;
+	--rl-breakpoint-desktop: 1024px;
+
+	/* ─── Z-index ─── */
+	--rl-z-base: 0;
+	--rl-z-raised: 10;
+	--rl-z-dropdown: 20;
+	--rl-z-sticky: 30;
+	--rl-z-overlay: 40;
+	--rl-z-modal: 50;
+	--rl-z-toast: 60;
+
+	/* ─── Shadow (restrained, OLED-friendly) ─── */
+	--rl-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+	--rl-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
+	--rl-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+	--rl-shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.7);
+
+	/* ============================================================================
+	   shadcn-svelte bridge — redirect shadcn primitives to consume --rl-* tokens.
+	   This is what makes shell components (sidebar, header, buttons) automatically
+	   adopt our palette. shadcn's `bg-background`, `text-muted-foreground`, etc.
+	   resolve through these.
+	   ============================================================================ */
+	--radius: 0.625rem;
+
+	--background: var(--rl-color-bg);
+	--foreground: var(--rl-color-text);
+	--card: var(--rl-color-surface);
+	--card-foreground: var(--rl-color-text);
+	--popover: var(--rl-color-surface);
+	--popover-foreground: var(--rl-color-text);
+	--primary: var(--rl-color-text);
+	--primary-foreground: var(--rl-color-bg);
+	--secondary: var(--rl-color-surface-raised);
+	--secondary-foreground: var(--rl-color-text);
+	--muted: var(--rl-color-surface-raised);
+	--muted-foreground: var(--rl-color-text-muted);
+	--accent: var(--rl-color-surface-raised);
+	--accent-foreground: var(--rl-color-text);
+	--destructive: var(--rl-color-danger);
+	--border: var(--rl-color-border);
+	--input: var(--rl-color-border);
+	--ring: var(--rl-color-text-muted);
+
+	/* Sidebar uses bg as its base so the shell reads as one continuous surface */
+	--sidebar: var(--rl-color-bg);
+	--sidebar-foreground: var(--rl-color-text);
+	--sidebar-primary: var(--rl-color-text);
+	--sidebar-primary-foreground: var(--rl-color-bg);
+	--sidebar-accent: var(--rl-color-surface);
+	--sidebar-accent-foreground: var(--rl-color-text);
+	--sidebar-border: var(--rl-color-border);
+	--sidebar-ring: var(--rl-color-text-muted);
+
+	/* Chart fallback palette — tickers uses lightweight-charts directly so this
+	   is rarely touched; provided for shadcn chart components if ever used */
+	--chart-1: var(--rl-color-emerald-400);
+	--chart-2: var(--rl-color-yellow-400);
+	--chart-3: var(--rl-color-orange-400);
+	--chart-4: var(--rl-color-red-400);
+	--chart-5: var(--rl-color-text-muted);
 }
 
 @theme inline {
