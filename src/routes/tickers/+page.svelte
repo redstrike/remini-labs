@@ -104,11 +104,6 @@
 </svelte:head>
 
 <div class="tickers">
-	<!-- Header -->
-	<div class="tickers-header">
-		<h1 class="tickers-title">Tickers</h1>
-	</div>
-
 	{#if tickers.error && !tickers.priceTable}
 		<div class="tickers-error-card">
 			<TriangleAlert size={20} />
@@ -442,17 +437,6 @@
 		color: #e8e6e3;
 	}
 
-	/* Header */
-	.tickers-header {
-		margin-bottom: 24px;
-		padding-bottom: 16px;
-		border-bottom: 1px solid #2a2a36;
-	}
-	.tickers-title {
-		font-size: 16px;
-		font-weight: 600;
-		letter-spacing: -0.2px;
-	}
 	:global(.tickers-spinner) {
 		animation: spin 1s linear infinite;
 	}
