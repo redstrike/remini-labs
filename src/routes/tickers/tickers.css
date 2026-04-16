@@ -1,0 +1,26 @@
+/* ============================================================================
+   Tickers mini-app — token overrides + tickers-only tokens
+   ----------------------------------------------------------------------------
+   Loaded by src/routes/tickers/+layout.svelte, which wraps the mini-app in
+   <div class="tickers-root">. Tokens declared here are visible ONLY to
+   descendants of .tickers-root via CSS variable inheritance — no leakage
+   into shell or other mini-apps.
+   ============================================================================ */
+
+.tickers-root {
+	/* ─── Asset accents (per-asset palette) ─── */
+	--rl-color-asset-gold: #d4a03a;
+	--rl-color-asset-silver: #a0a8b8;
+	--rl-color-asset-btc: #e8993a;
+	--rl-color-asset-eth: #6b7fcc;
+	--rl-color-asset-sol: #8a6db8;
+	--rl-color-asset-vn100: #b87333;
+
+	/* ─── Directional semantics (Western: green=up, red=down) ─── */
+	--rl-color-up: #2d9f6f;
+	--rl-color-down: #c44e4e;
+	--rl-color-spread: #d4874d;
+
+	/* ─── Tickers surfaces ─── */
+	--rl-color-chart-bg: #121218; /* darker than card surface for chart contrast */
+}

@@ -281,7 +281,11 @@
 			<div class="tickers-card">
 				<div class="tickers-card-header">
 					<div class="tickers-card-tabs">
-						<button class="tickers-card-tab active-vn100" style:--vn100-accent="#b87333"> VN100 </button>
+						<button
+							class="tickers-card-tab active-vn100"
+							style:--vn100-accent="var(--rl-color-asset-vn100)">
+							VN100
+						</button>
 					</div>
 					<div class="tickers-card-status">
 						<FreshnessDot elapsed={tickers.stocksElapsed} ttl={tickers.stocksTtl} />
@@ -432,9 +436,9 @@
 	.tickers {
 		max-width: 860px;
 		margin: 0 auto;
-		padding: 24px 16px;
-		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
-		color: #e8e6e3;
+		padding: var(--rl-space-lg) var(--rl-space-md);
+		font-family: var(--rl-font-sans);
+		color: var(--rl-color-text);
 	}
 
 	:global(.tickers-spinner) {
@@ -445,8 +449,8 @@
 	.tickers-cards {
 		display: grid;
 		grid-template-columns: 1fr;
-		gap: 16px;
-		margin-bottom: 24px;
+		gap: var(--rl-space-md);
+		margin-bottom: var(--rl-space-lg);
 	}
 	@media (min-width: 640px) {
 		.tickers-cards {
@@ -456,14 +460,14 @@
 
 	/* Card */
 	.tickers-card {
-		background: #1a1a24;
-		border: 1px solid #2a2a36;
-		border-radius: 12px;
+		background: var(--rl-color-surface);
+		border: 1px solid var(--rl-color-border);
+		border-radius: var(--rl-radius-lg);
 		padding: 20px;
-		transition: background 0.15s ease;
+		transition: background var(--rl-duration-short) var(--rl-ease-move);
 	}
 	.tickers-card:hover {
-		background: #22222e;
+		background: var(--rl-color-surface-raised);
 	}
 
 	/* Card header: tabs left, status right */
@@ -471,15 +475,15 @@
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
-		margin-bottom: 16px;
-		border-bottom: 1px solid #2a2a36;
+		margin-bottom: var(--rl-space-md);
+		border-bottom: 1px solid var(--rl-color-border);
 	}
 	.tickers-card-status {
 		display: flex;
 		align-items: center;
 		gap: 5px;
 		flex-shrink: 0;
-		padding-bottom: 8px;
+		padding-bottom: var(--rl-space-sm);
 	}
 	.tickers-card-refresh {
 		display: flex;
@@ -490,12 +494,12 @@
 		border-radius: 3px;
 		border: none;
 		background: transparent;
-		color: #6b6b76;
+		color: var(--rl-color-text-faint);
 		cursor: pointer;
-		transition: all 0.12s ease;
+		transition: all var(--rl-duration-micro) var(--rl-ease-move);
 	}
 	.tickers-card-refresh:hover {
-		color: #e8e6e3;
+		color: var(--rl-color-text);
 		background: rgba(255, 255, 255, 0.05);
 	}
 	.tickers-card-refresh:disabled {
@@ -505,32 +509,32 @@
 	/* Card tabs — underline style to differentiate from unit chips */
 	.tickers-card-tabs {
 		display: flex;
-		gap: 16px;
+		gap: var(--rl-space-md);
 	}
 	.tickers-card-tab {
-		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
-		font-size: 12px;
-		font-weight: 600;
+		font-family: var(--rl-font-sans);
+		font-size: var(--rl-text-sm);
+		font-weight: var(--rl-font-semibold);
 		letter-spacing: 0.3px;
-		padding: 0 0 8px;
+		padding: 0 0 var(--rl-space-sm);
 		border: none;
 		border-bottom: 2px solid transparent;
 		margin-bottom: -1px;
-		color: #6b6b76;
+		color: var(--rl-color-text-faint);
 		background: transparent;
 		cursor: pointer;
-		transition: all 0.12s ease;
+		transition: all var(--rl-duration-micro) var(--rl-ease-move);
 	}
 	.tickers-card-tab:hover {
-		color: #8a8a96;
+		color: var(--rl-color-text-subtle);
 	}
 	.tickers-card-tab.active-gold {
-		color: #d4a03a;
-		border-bottom-color: #d4a03a;
+		color: var(--rl-color-asset-gold);
+		border-bottom-color: var(--rl-color-asset-gold);
 	}
 	.tickers-card-tab.active-silver {
-		color: #a0a8b8;
-		border-bottom-color: #a0a8b8;
+		color: var(--rl-color-asset-silver);
+		border-bottom-color: var(--rl-color-asset-silver);
 	}
 	.tickers-card-tab.active-crypto {
 		color: var(--crypto-accent);
@@ -546,8 +550,8 @@
 	.tickers-metal-table {
 		display: grid;
 		grid-template-columns: auto 1fr 1fr;
-		gap: 4px 12px;
-		padding: 8px 0;
+		gap: var(--rl-space-xs) 12px;
+		padding: var(--rl-space-sm) 0;
 	}
 	.tickers-metal-header {
 		display: contents;
@@ -556,26 +560,26 @@
 		display: contents;
 	}
 	.tickers-metal-col-label {
-		font-size: 10px;
-		font-weight: 500;
-		color: #8a8a96;
+		font-size: var(--rl-text-2xs);
+		font-weight: var(--rl-font-medium);
+		color: var(--rl-color-text-subtle);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 		text-align: right;
 	}
 	.tickers-metal-unit {
-		font-size: 10px;
-		font-weight: 500;
-		color: #8a8a96;
+		font-size: var(--rl-text-2xs);
+		font-weight: var(--rl-font-medium);
+		color: var(--rl-color-text-subtle);
 		align-self: center;
 	}
 	.tickers-metal-value {
-		font-family: 'Geist Mono', 'GeistMono', monospace;
-		font-size: 16px;
-		font-weight: 700;
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-md);
+		font-weight: var(--rl-font-bold);
 		font-variant-numeric: tabular-nums;
 		letter-spacing: -0.3px;
-		color: #e8e6e3;
+		color: var(--rl-color-text);
 		text-align: right;
 	}
 	/* Price rows */
@@ -589,9 +593,9 @@
 		border-top: 1px solid rgba(255, 255, 255, 0.04);
 	}
 	.tickers-price-label {
-		font-size: 11px;
-		font-weight: 500;
-		color: #8a8a96;
+		font-size: var(--rl-text-xs);
+		font-weight: var(--rl-font-medium);
+		color: var(--rl-color-text-subtle);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 		min-width: 40px;
@@ -602,12 +606,12 @@
 		gap: 6px;
 	}
 	.tickers-price-value {
-		font-family: 'Geist Mono', 'GeistMono', monospace;
-		font-size: 24px;
-		font-weight: 700;
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-2xl);
+		font-weight: var(--rl-font-bold);
 		font-variant-numeric: tabular-nums;
 		letter-spacing: -0.5px;
-		color: #e8e6e3;
+		color: var(--rl-color-text);
 	}
 	@media (min-width: 640px) {
 		.tickers-price-value {
@@ -615,8 +619,8 @@
 		}
 	}
 	.tickers-price-unit {
-		font-size: 10px;
-		color: #8a8a96;
+		font-size: var(--rl-text-2xs);
+		color: var(--rl-color-text-subtle);
 	}
 
 	/* Spread */
@@ -624,36 +628,36 @@
 		display: flex;
 		justify-content: flex-end;
 		align-items: center;
-		padding-top: 8px;
-		margin-top: 4px;
-		border-top: 1px solid #2a2a36;
+		padding-top: var(--rl-space-sm);
+		margin-top: var(--rl-space-xs);
+		border-top: 1px solid var(--rl-color-border);
 		gap: 6px;
 	}
 	.tickers-spread-label {
-		font-size: 10px;
-		color: #8a8a96;
+		font-size: var(--rl-text-2xs);
+		color: var(--rl-color-text-subtle);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
 	.tickers-spread-value {
-		font-family: 'Geist Mono', 'GeistMono', monospace;
+		font-family: var(--rl-font-mono);
 		font-size: 13px;
-		font-weight: 600;
-		color: #d4874d;
+		font-weight: var(--rl-font-semibold);
+		color: var(--rl-color-spread);
 		font-variant-numeric: tabular-nums;
 	}
 
 	/* Chart section */
 	.tickers-chart-section {
-		background: #121218;
-		border: 1px solid #2a2a36;
-		border-radius: 12px;
+		background: var(--rl-color-chart-bg);
+		border: 1px solid var(--rl-color-border);
+		border-radius: var(--rl-radius-lg);
 		padding: 20px;
 	}
 	@media (max-width: 639px) {
 		.tickers-chart-section {
-			margin-left: -16px;
-			margin-right: -16px;
+			margin-left: calc(-1 * var(--rl-space-md));
+			margin-right: calc(-1 * var(--rl-space-md));
 			border-radius: 0;
 			border-left: none;
 			border-right: none;
@@ -668,7 +672,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: stretch;
-		margin-bottom: 16px;
+		margin-bottom: var(--rl-space-md);
 		gap: 10px;
 	}
 	.tickers-chart-sub-controls {
@@ -676,7 +680,7 @@
 		justify-content: space-between;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 8px;
+		gap: var(--rl-space-sm);
 	}
 	.tickers-chart-intervals {
 		display: flex;
@@ -684,21 +688,21 @@
 		gap: 6px;
 	}
 	.tickers-interval-label {
-		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
-		font-size: 10px;
-		font-weight: 500;
-		color: #6b6b76;
+		font-family: var(--rl-font-sans);
+		font-size: var(--rl-text-2xs);
+		font-weight: var(--rl-font-medium);
+		color: var(--rl-color-text-faint);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 		white-space: nowrap;
 	}
 	.tickers-chart-tabs {
 		display: flex;
-		background: #1a1a24;
+		background: var(--rl-color-surface);
 		margin: -20px -20px 0;
-		padding: 16px 20px 12px;
-		border-radius: 12px 12px 0 0;
-		border-bottom: 1px solid #2a2a36;
+		padding: var(--rl-space-md) 20px 12px;
+		border-radius: var(--rl-radius-lg) var(--rl-radius-lg) 0 0;
+		border-bottom: 1px solid var(--rl-color-border);
 		gap: 0;
 	}
 	/* Scrollable tab group — keeps status indicator pinned on overflow */
@@ -713,7 +717,7 @@
 		height: 2px;
 	}
 	.tickers-chart-tabs-scroll::-webkit-scrollbar-thumb {
-		background: #2a2a36;
+		background: var(--rl-color-border);
 	}
 	.tickers-chart-status {
 		display: flex;
@@ -735,97 +739,97 @@
 		gap: 6px;
 	}
 	.tickers-candle-label {
-		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
-		font-size: 10px;
-		font-weight: 500;
-		color: #6b6b76;
+		font-family: var(--rl-font-sans);
+		font-size: var(--rl-text-2xs);
+		font-weight: var(--rl-font-medium);
+		color: var(--rl-color-text-faint);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 		white-space: nowrap;
 	}
 	.tickers-candle-chips {
 		display: flex;
-		border: 1px solid #2a2a36;
-		border-radius: 4px;
+		border: 1px solid var(--rl-color-border);
+		border-radius: var(--rl-radius-sm);
 		overflow: hidden;
 	}
 	.tickers-candle-chip {
-		font-family: 'Geist Mono', 'GeistMono', monospace;
-		font-size: 10px;
-		font-weight: 500;
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-2xs);
+		font-weight: var(--rl-font-medium);
 		padding: 5px 9px;
 		border: none;
-		border-right: 1px solid #2a2a36;
+		border-right: 1px solid var(--rl-color-border);
 		border-radius: 0;
-		color: #8a8a96;
+		color: var(--rl-color-text-subtle);
 		background: transparent;
 		cursor: pointer;
-		transition: all 0.12s ease;
+		transition: all var(--rl-duration-micro) var(--rl-ease-move);
 	}
 	.tickers-candle-chip:last-child {
 		border-right: none;
 	}
 	.tickers-candle-chip:hover {
 		background: rgba(255, 255, 255, 0.03);
-		color: #e8e6e3;
+		color: var(--rl-color-text);
 	}
 	.tickers-candle-chip.active {
 		background: rgba(232, 230, 227, 0.08);
-		color: #e8e6e3;
-		font-weight: 600;
+		color: var(--rl-color-text);
+		font-weight: var(--rl-font-semibold);
 	}
 	.tickers-chart-tab {
 		flex-shrink: 0;
-		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
-		font-size: 11px;
-		font-weight: 500;
+		font-family: var(--rl-font-sans);
+		font-size: var(--rl-text-xs);
+		font-weight: var(--rl-font-medium);
 		padding: 6px 12px;
-		border: 1px solid #2a2a36;
+		border: 1px solid var(--rl-color-border);
 		border-right: none;
 		border-radius: 0;
-		color: #8a8a96;
+		color: var(--rl-color-text-subtle);
 		background: transparent;
 		cursor: pointer;
-		transition: all 0.12s ease;
+		transition: all var(--rl-duration-micro) var(--rl-ease-move);
 	}
 	.tickers-chart-tab:first-child {
-		border-radius: 4px 0 0 4px;
+		border-radius: var(--rl-radius-sm) 0 0 var(--rl-radius-sm);
 	}
 	.tickers-chart-tab:last-child {
-		border-radius: 0 4px 4px 0;
-		border-right: 1px solid #2a2a36;
+		border-radius: 0 var(--rl-radius-sm) var(--rl-radius-sm) 0;
+		border-right: 1px solid var(--rl-color-border);
 	}
 	.tickers-chart-tab:hover {
 		background: rgba(255, 255, 255, 0.03);
-		color: #e8e6e3;
+		color: var(--rl-color-text);
 	}
 	.tickers-chart-tab.active {
 		background: color-mix(in srgb, var(--tab-accent) 15%, transparent);
 		color: var(--tab-accent);
 		border-color: color-mix(in srgb, var(--tab-accent) 30%, transparent);
-		font-weight: 600;
+		font-weight: var(--rl-font-semibold);
 	}
 	.tickers-chart-tab.active + .tickers-chart-tab {
 		border-left-color: color-mix(in srgb, var(--tab-accent) 30%, transparent);
 	}
 	.tickers-chart-durations {
 		display: flex;
-		border: 1px solid #2a2a36;
-		border-radius: 4px;
+		border: 1px solid var(--rl-color-border);
+		border-radius: var(--rl-radius-sm);
 		overflow: hidden;
 	}
 	.tickers-duration-chip {
-		font-family: 'Geist Mono', 'GeistMono', monospace;
-		font-size: 10px;
-		font-weight: 500;
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-2xs);
+		font-weight: var(--rl-font-medium);
 		padding: 5px 9px;
 		border: none;
-		border-right: 1px solid #2a2a36;
+		border-right: 1px solid var(--rl-color-border);
 		border-radius: 0;
-		color: #8a8a96;
+		color: var(--rl-color-text-subtle);
 		background: transparent;
 		cursor: pointer;
-		transition: all 0.12s ease;
+		transition: all var(--rl-duration-micro) var(--rl-ease-move);
 		white-space: nowrap;
 	}
 	.tickers-duration-chip:last-child {
@@ -833,12 +837,12 @@
 	}
 	.tickers-duration-chip:hover {
 		background: rgba(255, 255, 255, 0.03);
-		color: #e8e6e3;
+		color: var(--rl-color-text);
 	}
 	.tickers-duration-chip.active {
 		background: rgba(232, 230, 227, 0.08);
-		color: #e8e6e3;
-		font-weight: 600;
+		color: var(--rl-color-text);
+		font-weight: var(--rl-font-semibold);
 	}
 
 	.tickers-chart-body {
@@ -849,82 +853,82 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 8px;
+		gap: var(--rl-space-sm);
 		min-height: 280px;
-		color: #4a4a56;
-		font-size: 12px;
+		color: var(--rl-color-text-faint);
+		font-size: var(--rl-text-sm);
 		font-style: italic;
 	}
 
 	/* Error / stale */
 	.tickers-error-card {
-		background: rgba(196, 78, 78, 0.1);
+		background: var(--rl-color-danger-bg);
 		border: 1px solid rgba(196, 78, 78, 0.2);
-		border-radius: 12px;
-		padding: 32px 20px;
+		border-radius: var(--rl-radius-lg);
+		padding: var(--rl-space-xl) 20px;
 		text-align: center;
-		color: #c44e4e;
+		color: var(--rl-color-danger);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 12px;
 	}
 	.tickers-retry {
-		font-family: 'Geist', 'Geist Sans', system-ui, sans-serif;
+		font-family: var(--rl-font-sans);
 		font-size: 13px;
-		font-weight: 500;
-		padding: 8px 16px;
-		border-radius: 4px;
-		border: 1px solid #2a2a36;
-		color: #e8e6e3;
+		font-weight: var(--rl-font-medium);
+		padding: var(--rl-space-sm) var(--rl-space-md);
+		border-radius: var(--rl-radius-sm);
+		border: 1px solid var(--rl-color-border);
+		color: var(--rl-color-text);
 		background: transparent;
 		cursor: pointer;
 	}
 	.tickers-retry:hover {
-		border-color: #6b6b76;
+		border-color: var(--rl-color-text-faint);
 	}
 
 	/* Crypto */
 	.tickers-crypto-price {
-		font-size: 20px;
+		font-size: var(--rl-text-xl);
 	}
 	@media (min-width: 640px) {
 		.tickers-crypto-price {
-			font-size: 18px;
+			font-size: var(--rl-text-lg);
 		}
 	}
 	.tickers-crypto-change {
-		font-family: 'Geist Mono', 'GeistMono', monospace;
-		font-size: 14px;
-		font-weight: 700;
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-base);
+		font-weight: var(--rl-font-bold);
 		font-variant-numeric: tabular-nums;
 	}
 	.tickers-crypto-change.up {
-		color: #2d9f6f;
+		color: var(--rl-color-up);
 	}
 	.tickers-crypto-change.down {
-		color: #c44e4e;
+		color: var(--rl-color-down);
 	}
 	.tickers-crypto-pct {
-		font-family: 'Geist Mono', 'GeistMono', monospace;
-		font-size: 10px;
-		font-weight: 500;
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-2xs);
+		font-weight: var(--rl-font-medium);
 		font-variant-numeric: tabular-nums;
 	}
 	.tickers-crypto-pct.up {
-		color: #2d9f6f;
+		color: var(--rl-color-up);
 	}
 	.tickers-crypto-pct.down {
-		color: #c44e4e;
+		color: var(--rl-color-down);
 	}
 	.tickers-crypto-range {
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
-		gap: 16px;
+		gap: var(--rl-space-md);
 		padding-top: 12px;
-		margin-top: 4px;
-		border-top: 1px solid #2a2a36;
+		margin-top: var(--rl-space-xs);
+		border-top: 1px solid var(--rl-color-border);
 	}
 	.tickers-crypto-range-pair {
 		display: flex;
@@ -932,16 +936,16 @@
 		gap: 5px;
 	}
 	.tickers-crypto-range-label {
-		font-size: 10px;
-		color: #8a8a96;
+		font-size: var(--rl-text-2xs);
+		color: var(--rl-color-text-subtle);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
 	.tickers-crypto-range-value {
-		font-family: 'Geist Mono', 'GeistMono', monospace;
+		font-family: var(--rl-font-mono);
 		font-size: 13px;
-		font-weight: 600;
-		color: #d4874d;
+		font-weight: var(--rl-font-semibold);
+		color: var(--rl-color-spread);
 		font-variant-numeric: tabular-nums;
 	}
 
