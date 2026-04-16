@@ -1,0 +1,23 @@
+/* ============================================================================
+   Weather mini-app — token overrides + weather-only tokens
+   ----------------------------------------------------------------------------
+   Loaded by src/routes/weather/+layout.svelte, which wraps the mini-app in
+   <div class="weather-root">. Tokens declared here are visible ONLY to
+   descendants of .weather-root via CSS variable inheritance.
+   ============================================================================ */
+
+.weather-root {
+	/* ─── Sandbox device frame (gradient on the preview "device") ─── */
+	--rl-color-weather-device-from: #0d1117;
+	--rl-color-weather-device-mid: #111827;
+	--rl-color-weather-device-to: #0f172a;
+
+	/* ─── Condition accents (current weather palette) ─── */
+	--rl-color-weather-clear-day: #c9a84c;
+	--rl-color-weather-clear-night: #6b8aad;
+	--rl-color-weather-hot: #c47a4d;
+	--rl-color-weather-cloud: #8a8a96;
+	--rl-color-weather-rain: #5b8fb9;
+	--rl-color-weather-snow: #9ab8d4;
+	--rl-color-weather-storm: #8b7bb8;
+}
