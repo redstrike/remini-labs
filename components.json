@@ -12,5 +12,9 @@
 		"lib": "$lib"
 	},
 	"typescript": true,
-	"registry": "https://shadcn-svelte.com/registry"
+	"registry": "https://shadcn-svelte.com/registry",
+	"reminiLabs": {
+		"syncedAt": 1776455870240,
+		"syncedAtIso": "2026-04-17T19:57:50.240Z"
+	}
 }
