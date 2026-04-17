@@ -11,8 +11,8 @@
 		VN100_FORMATTER,
 	} from './use-tickers.svelte'
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js'
-	import { LoadingOverlay } from '$lib/components/ui/loading-overlay/index.js'
-	import { FreshnessDot } from '$lib/components/ui/freshness-dot/index.js'
+	import { LoadingOverlay } from '$lib/components/remini-labs/loading-overlay/index.js'
+	import { FreshnessDot } from '$lib/components/remini-labs/freshness-dot/index.js'
 	import { RefreshCw as SpinnerIcon, TriangleAlert } from '@lucide/svelte'
 	import { formatCryptoDisplay, splitCryptoSymbol } from './api/binance-client'
 	import PriceChart, { type CandleSize } from './price-chart.svelte'
