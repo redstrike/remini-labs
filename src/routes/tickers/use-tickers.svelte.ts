@@ -8,7 +8,8 @@ import {
 	type CryptoSymbol,
 } from './api/binance-client'
 import type { PriceTable, ChartData } from './api/phuquy-client'
-import type { IndexQuote } from './api/ssi-iboard-client'
+import type { IndexQuote, StockQuote } from './api/ssi-iboard-client'
+import { createWatchlist } from './use-watchlist.svelte'
 import { STOCKS_POLL_MS, computeNextPollTime, msUntilNextPoll } from './vn-stock-schedule'
 
 type FetchResult = { ok: true } | { ok: false; error: string }
@@ -72,6 +73,7 @@ const SSR_FRESHNESS_MS = 60 * 1000
 
 export function useTickers(initialData: TickersData) {
 	const bus = createEventBus<TickersEvents>()
+	const watchlist = createWatchlist()
 	let priceTable = $state<PriceTable | null>(initialData.table)
 	let loading = $state(!initialData.table)
 	let error = $state<string | null>(null)
@@ -121,6 +123,9 @@ export function useTickers(initialData: TickersData) {
 	// Mon 09:00 on weekends). Zero wasted wakes during closed windows.
 	$effect(() => {
 		if (!browser) return
+		// Immediate fetch on mount so watchlist stock quotes populate without waiting for
+		// the VN market schedule (which might be hours away during off-hours).
+		if (watchlist.stocks.length > 0) fetchStocks()
 		let timer: ReturnType<typeof setTimeout> | null = null
 		function scheduleNext() {
 			timer = setTimeout(async () => {
@@ -196,19 +201,30 @@ export function useTickers(initialData: TickersData) {
 	async function fetchCryptoTickers() {
 		bus.emit('crypto:fetching', undefined as void)
 		try {
-			cryptoTickers = await fetchBinanceTickers()
+			// Merge fixed symbols with watchlist — dedup in case user added a fixed pair alias
+			const allSymbols = [...new Set([...Object.values(CRYPTO_SYMBOLS), ...watchlist.crypto])]
+			cryptoTickers = await fetchBinanceTickers(allSymbols)
 			now = lastCryptoFetchedAt = Date.now()
 			bus.emit('crypto:fetched', { ok: true })
-			if (chartAsset in CRYPTO_SYMBOLS) autoRefreshChart()
+			if (chartAsset in CRYPTO_SYMBOLS || watchlist.crypto.includes(chartAsset)) autoRefreshChart()
 		} catch (e) {
 			console.error('Crypto ticker fetch error:', e)
 			bus.emit('crypto:fetched', { ok: false, error: (e as Error).message })
 		}
 	}
 
-	// VN100 spot quote
+	function getCryptoTickerBySymbol(symbol: string): CryptoTicker | null {
+		return cryptoTickers.find((t) => t.symbol === symbol) ?? null
+	}
+
+	// VN100 spot quote + watchlist stock quotes
 	let vn100Quote = $state<IndexQuote | null>(initialData.vn100 ?? null)
+	let stockQuotes = $state<Map<string, StockQuote>>(new Map())
 	let lastStocksFetchedAt = $state(Date.now())
+
+	function getStockQuote(symbol: string): StockQuote | null {
+		return stockQuotes.get(symbol) ?? null
+	}
 
 	async function fetchStocks() {
 		bus.emit('stocks:fetching', undefined as void)
@@ -216,12 +232,27 @@ export function useTickers(initialData: TickersData) {
 			const res = await fetch(`/tickers/api/spots/stocks?symbol=${STOCK_SYMBOL}`)
 			if (res.ok) {
 				vn100Quote = await res.json()
-				now = lastStocksFetchedAt = Date.now()
-				bus.emit('stocks:fetched', { ok: true })
-				if (chartAsset === 'VN100') autoRefreshChart()
-			} else {
-				bus.emit('stocks:fetched', { ok: false, error: `API returned ${res.status}` })
 			}
+
+			// Watchlist stocks — parallel via the cached server route
+			if (watchlist.stocks.length > 0) {
+				const results = await Promise.allSettled(
+					watchlist.stocks.map((s) =>
+						fetch(`/tickers/api/stocks/quote?symbol=${s}`).then((r) => (r.ok ? r.json() : null)),
+					),
+				)
+				const newMap = new Map<string, StockQuote>()
+				results.forEach((result, i) => {
+					if (result.status === 'fulfilled' && result.value) {
+						newMap.set(watchlist.stocks[i], result.value)
+					}
+				})
+				stockQuotes = newMap
+			}
+
+			now = lastStocksFetchedAt = Date.now()
+			bus.emit('stocks:fetched', { ok: true })
+			if (chartAsset === 'VN100' || watchlist.stocks.includes(chartAsset)) autoRefreshChart()
 		} catch (e) {
 			console.error('Stocks fetch error:', e)
 			bus.emit('stocks:fetched', { ok: false, error: (e as Error).message })
@@ -264,7 +295,8 @@ export function useTickers(initialData: TickersData) {
 	}
 
 	// Chart helpers (pure functions, no state deps — must be above state init)
-	type ChartAsset = 'gold' | 'silver' | CryptoId | 'VN100'
+	// Widened to string to accept watchlist symbols (e.g. 'ADAUSDT', 'FPT') alongside fixed assets.
+	type ChartAsset = string
 	type ChartDuration = '7D' | '15D' | '1M' | '3M' | '6M' | '1Y'
 
 	const DURATION_DAYS: Record<ChartDuration, number | null> = {
@@ -326,11 +358,10 @@ export function useTickers(initialData: TickersData) {
 	const chartCache = new Map<string, CacheEntry>()
 
 	function chartCacheTtl(asset: ChartAsset, fetchedAt: number = Date.now()): number {
-		// VN stocks follow the market schedule — TTL stretches across closed hours
-		if (asset === 'VN100') {
+		if (asset === 'VN100' || watchlist.stocks.includes(asset)) {
 			return computeNextPollTime(new Date(fetchedAt)).getTime() - fetchedAt
 		}
-		if (asset in CRYPTO_SYMBOLS) return CRYPTO_STALE_MS
+		if (asset in CRYPTO_SYMBOLS || watchlist.crypto.includes(asset)) return CRYPTO_STALE_MS
 		return METALS_STALE_MS
 	}
 
@@ -386,18 +417,20 @@ export function useTickers(initialData: TickersData) {
 			chartLoading = true
 		}, LOADING_DELAY_MS)
 		chartError = null
-		const chartSource = asset === 'VN100' ? 'stocks' : asset in CRYPTO_SYMBOLS ? 'crypto' : 'metals'
+		const isStockChart = asset === 'VN100' || watchlist.stocks.includes(asset)
+		const isCryptoChart = asset in CRYPTO_SYMBOLS || watchlist.crypto.includes(asset)
+		const chartSource = isStockChart ? 'stocks' : isCryptoChart ? 'crypto' : 'metals'
 		bus.emit(`chart:${chartSource}:fetching` as const, undefined as void)
 		try {
 			let data: ChartData
 
-			if (asset === 'VN100') {
-				const res = await fetch(`/tickers/api/charts/stocks?symbol=${STOCK_SYMBOL}`)
+			if (isStockChart) {
+				const res = await fetch(`/tickers/api/charts/stocks?symbol=${asset}`)
 				if (!res.ok) throw new Error(`API returned ${res.status}`)
 				const raw = await res.json()
 				data = { changeRate: raw.changeRate, points: [], candles: raw.candles }
-			} else if (asset in CRYPTO_SYMBOLS) {
-				const symbol = CRYPTO_SYMBOLS[asset as CryptoId]
+			} else if (isCryptoChart) {
+				const symbol = asset in CRYPTO_SYMBOLS ? CRYPTO_SYMBOLS[asset as CryptoId] : asset
 				const raw = await fetchCryptoKlines(symbol)
 				data = { changeRate: raw.changeRate, points: [], candles: raw.candles }
 			} else {
@@ -459,14 +492,16 @@ export function useTickers(initialData: TickersData) {
 			return selectedSilver
 		},
 		getCryptoTicker,
+		getCryptoTickerBySymbol,
 		get vn100Quote() {
 			return vn100Quote
 		},
+		getStockQuote,
 		get isCryptoAsset() {
-			return chartAsset in CRYPTO_SYMBOLS
+			return chartAsset in CRYPTO_SYMBOLS || watchlist.crypto.includes(chartAsset)
 		},
 		get isStockAsset() {
-			return chartAsset === 'VN100'
+			return chartAsset === 'VN100' || watchlist.stocks.includes(chartAsset)
 		},
 		get metalsElapsed() {
 			return metalsElapsed
@@ -513,6 +548,7 @@ export function useTickers(initialData: TickersData) {
 			return refreshing
 		},
 		bus,
+		watchlist,
 		forceRefreshAll,
 		refreshMetals: fetchMetals,
 		refreshCrypto: fetchCryptoTickers,
@@ -578,4 +614,23 @@ export const VN100_FORMATTER = {
 	format: formatVN100,
 	formatCompact: formatVN100,
 	formatAxis: formatVN100,
+}
+
+// Adaptive precision for any crypto pair — auto-scales to the value's magnitude.
+// Stablecoins (USDT/USDC/…) use the existing tiered USDT formatter with $ prefix.
+// Non-stablecoin quotes (BTC/ETH/BNB/TRY/EUR/…) show raw numbers without $ prefix.
+const STABLECOIN_QUOTES = new Set(['USDT', 'USDC', 'FDUSD', 'TUSD', 'BUSD', 'DAI'])
+
+export function formatCryptoPrice(value: number, quote: string): string {
+	if (STABLECOIN_QUOTES.has(quote)) return formatUSDT(value)
+	const abs = Math.abs(value)
+	if (abs === 0) return '0'
+	if (abs >= 1000) return value.toFixed(2)
+	if (abs >= 1) return value.toFixed(4)
+	if (abs >= 0.01) return value.toFixed(6)
+	return value.toFixed(8)
+}
+
+export function formatStockPrice(value: number): string {
+	return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value)
 }
