@@ -17,10 +17,12 @@ const FETCH_TIMEOUT_MS = 5000
 
 // --- Types ---
 
-export type CryptoSymbol = 'BTCUSDT' | 'ETHUSDT' | 'SOLUSDT'
+// Widened from a narrow 3-member union to string — the watchlist can add any valid Binance pair.
+// The picker validates symbols against exchangeInfo before they enter the watchlist.
+export type CryptoSymbol = string
 
 export interface CryptoTicker {
-	symbol: CryptoSymbol
+	symbol: string
 	lastPrice: number
 	priceChange: number
 	priceChangePercent: number
@@ -128,6 +130,147 @@ export async function fetchCryptoTickers(symbols: CryptoSymbol[] = ALL_SYMBOLS):
 			quoteVolume: parseFloat(t.quoteVolume),
 		}),
 	)
+}
+
+// === Symbol dictionary for autocomplete picker ===
+
+/** Compact crypto dict: quote-asset → list of base-assets. ~30KB stringified, parses in <2ms. */
+export type CryptoDict = Record<string, string[]>
+
+/** A single match surfaced by `searchCryptoDict()`. */
+export interface CryptoSymbolMatch {
+	symbol: string // 'BTCUSDT' — always base + quote
+	base: string // 'BTC'
+	quote: string // 'USDT'
+}
+
+interface ExchangeInfoSymbol {
+	symbol: string
+	baseAsset: string
+	quoteAsset: string
+	status: string
+}
+
+/**
+ * Fetch Binance's TRADING-status symbol universe and compact into a quote-grouped dict.
+ * Refreshed weekly via Workers Cache; new listings happen slowly enough that 7-day staleness is fine.
+ */
+export async function fetchCryptoDict(): Promise<CryptoDict> {
+	const res = await binanceFetch('/exchangeInfo')
+	if (!res.ok) throw new Error(`Binance exchangeInfo returned ${res.status}`)
+
+	const data: { symbols: ExchangeInfoSymbol[] } = await res.json()
+
+	const dict: CryptoDict = {}
+	for (const s of data.symbols) {
+		if (s.status !== 'TRADING') continue
+		;(dict[s.quoteAsset] ??= []).push(s.baseAsset)
+	}
+	return dict
+}
+
+/**
+ * Rank-search the crypto dict. Six tiers from most to least specific:
+ *   1. base exact      — q='ETH'    → ETH-anything pairs first
+ *   2. symbol exact    — q='ETHBTC' → that single pair
+ *   3. base prefix     — q='ETHB'   → ETHBNB, ETHBUSD, …
+ *   4. symbol prefix   — q='ETHB'   → also catches ETHBTC, ETHBNB
+ *   5. base substring  — q='USDT'-like base names (rare)
+ *   6. symbol substring— q='USDT'   → BTCUSDT, ETHUSDT, …
+ */
+export function searchCryptoDict(query: string, dict: CryptoDict, limit = 10): CryptoSymbolMatch[] {
+	const q = query.trim().toUpperCase()
+	// Empty query → nothing, so the UI can show a "Type a ticker…" hint instead of a firehose.
+	if (!q) return []
+
+	const baseExact: CryptoSymbolMatch[] = []
+	const symbolExact: CryptoSymbolMatch[] = []
+	const basePrefix: CryptoSymbolMatch[] = []
+	const symbolPrefix: CryptoSymbolMatch[] = []
+	const baseSubstring: CryptoSymbolMatch[] = []
+	const symbolSubstring: CryptoSymbolMatch[] = []
+
+	for (const [quote, bases] of Object.entries(dict)) {
+		for (const base of bases) {
+			const symbol = base + quote
+			const m: CryptoSymbolMatch = { symbol, base, quote }
+			if (base === q) baseExact.push(m)
+			else if (symbol === q) symbolExact.push(m)
+			else if (base.startsWith(q)) basePrefix.push(m)
+			else if (symbol.startsWith(q)) symbolPrefix.push(m)
+			else if (base.includes(q)) baseSubstring.push(m)
+			else if (symbol.includes(q)) symbolSubstring.push(m)
+		}
+	}
+
+	return [...baseExact, ...symbolExact, ...basePrefix, ...symbolPrefix, ...baseSubstring, ...symbolSubstring].slice(
+		0,
+		limit,
+	)
+}
+
+/**
+ * Split a Binance pair symbol into (base, quote) using a known-quotes heuristic, sorted longest
+ * first so 'BTCFDUSD' splits as BTC+FDUSD rather than BTCFD+USD. Falls back to null for symbols
+ * with quote currencies we don't recognize — caller decides whether to display raw or hide.
+ */
+const KNOWN_QUOTES = [
+	'FDUSD',
+	'IDRT',
+	'EURI',
+	'USD1',
+	'USDT',
+	'USDC',
+	'TUSD',
+	'BUSD',
+	'BIDR',
+	'BVND',
+	'BTC',
+	'ETH',
+	'BNB',
+	'TRY',
+	'EUR',
+	'BRL',
+	'PLN',
+	'ARS',
+	'JPY',
+	'MXN',
+	'IDR',
+	'XRP',
+	'NGN',
+	'RUB',
+	'UAH',
+	'ZAR',
+	'DAI',
+	'PAX',
+	'UST',
+	'GBP',
+	'AUD',
+	'CZK',
+	'RON',
+]
+
+export function splitCryptoSymbol(symbol: string): { base: string; quote: string } | null {
+	const s = symbol.toUpperCase()
+	for (const q of KNOWN_QUOTES) {
+		if (s.endsWith(q) && s.length > q.length) {
+			return { base: s.slice(0, -q.length), quote: q }
+		}
+	}
+	return null
+}
+
+/**
+ * Display formatter for a crypto pair. Mirrors Binance's pair display:
+ *   - USDT pairs show just the base ("ETH" not "ETH/USDT") — USDT is the assumed default
+ *   - Other pairs show "BASE/QUOTE" with quote rendered subdued by the consumer
+ *   - Unknown quote → primary = raw symbol, suffix = ''
+ */
+export function formatCryptoDisplay(symbol: string): { primary: string; suffix: string } {
+	const split = splitCryptoSymbol(symbol)
+	if (!split) return { primary: symbol, suffix: '' }
+	if (split.quote === 'USDT') return { primary: split.base, suffix: '' }
+	return { primary: split.base, suffix: '/' + split.quote }
 }
 
 export async function fetchCryptoKlines(symbol: CryptoSymbol, limit = 365): Promise<CryptoChartData> {
