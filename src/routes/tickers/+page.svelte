@@ -8,7 +8,7 @@
 		formatCryptoPrice,
 		formatStockPrice,
 		USDT_FORMATTER,
-		VN100_FORMATTER,
+		STOCK_FORMATTER,
 	} from './use-tickers.svelte'
 	import { Skeleton } from '$lib/components/shadcn-svelte/skeleton/index.js'
 	import { LoadingOverlay } from '$lib/components/remini-labs/loading-overlay/index.js'
@@ -580,7 +580,7 @@
 							<span class="tickers-price-label">Price</span>
 							<div class="tickers-price-value-wrap">
 								<span class="tickers-price-value tickers-crypto-price"
-									>{formatStockPrice(q.price * 1000)}</span>
+									>{formatStockPrice(q.price)}</span>
 								<span class="tickers-price-unit">VND</span>
 							</div>
 						</div>
@@ -588,7 +588,7 @@
 							<span class="tickers-price-label">Change</span>
 							<div class="tickers-price-value-wrap">
 								<span class="tickers-crypto-change" class:up class:down={!up}>
-									{up ? '+' : ''}{formatStockPrice(q.change * 1000)}
+									{up ? '+' : ''}{formatStockPrice(q.change)}
 								</span>
 								<span class="tickers-crypto-pct" class:up class:down={!up}>
 									({up ? '+' : ''}{q.pctChange.toFixed(2)}%)
@@ -598,7 +598,7 @@
 						<div class="tickers-crypto-range">
 							<span class="tickers-crypto-range-pair">
 								<span class="tickers-crypto-range-label">Ref</span>
-								<span class="tickers-crypto-range-value">{formatStockPrice(q.refPrice * 1000)}</span>
+								<span class="tickers-crypto-range-value">{formatStockPrice(q.refPrice)}</span>
 							</span>
 							<span class="tickers-crypto-range-pair">
 								<span class="tickers-crypto-range-label">Vol</span>
@@ -657,10 +657,10 @@
 			<div class="tickers-chart-header">
 				<div class="tickers-chart-tabs">
 					<div class="tickers-chart-tabs-scroll" onwheel={horizontalWheel}>
-						{#each [{ id: 'gold' as string, label: 'Gold', accent: '#c9a84c' }, { id: 'silver', label: 'Silver', accent: '#8a94a8' }, ...CRYPTO.map( (c) => ({ id: c.id, label: c.id, accent: c.accent }), ), { id: 'VN100', label: 'VN100', accent: '#b87333' }, ...tickers.watchlist.crypto.map( (s) => {
+						{#each [{ id: 'gold' as string, label: 'Gold', accent: '#c9a84c' }, { id: 'silver', label: 'Silver', accent: '#8a94a8' }, ...CRYPTO.map( (c) => ({ id: c.id, label: c.id, accent: c.accent }), ), ...tickers.watchlist.crypto.map( (s) => {
 									const fmt = formatCryptoDisplay(s)
 									return { id: s, label: fmt.primary + fmt.suffix, accent: brandFor(s) ?? '#6b8aad' }
-								}, ), ...tickers.watchlist.stocks.map( (s) => ({ id: s, label: s, accent: '#b87333' }), )] as tab (tab.id)}
+								}, ), { id: 'VN100', label: 'VN100', accent: '#b87333' }, ...tickers.watchlist.stocks.map( (s) => ({ id: s, label: s, accent: '#b87333' }), )] as tab (tab.id)}
 							<button
 								class="tickers-chart-tab"
 								class:active={tickers.chartAsset === tab.id}
@@ -727,7 +727,7 @@
 							priceFormatter={tickers.isCryptoAsset
 								? USDT_FORMATTER
 								: tickers.isStockAsset
-									? VN100_FORMATTER
+									? STOCK_FORMATTER
 									: undefined}
 							{candleSize} />
 					{:else}
@@ -782,6 +782,11 @@
 		   past the column width. Overriding to 0 keeps the card pinned to its grid cell so the
 		   inner overflow-x: auto on .tickers-card-tabs actually clips and scrolls. */
 		min-width: 0;
+		/* Reserve a natural footprint so an empty-body state (new-tab placeholder active) doesn't
+		   collapse to header-height. CSS Grid only cross-stretches row-siblings, so a card alone
+		   in its row (stock card at the 2-col breakpoint, any card on mobile) has nothing to match
+		   against. 215px ≈ the filled metals/crypto body height — see +page.svelte body rendering. */
+		min-height: 215px;
 		transition: background var(--rl-duration-short) var(--rl-ease-move);
 	}
 	.tickers-card:hover {
@@ -933,7 +938,10 @@
 		font-family: var(--rl-font-mono);
 		font-size: var(--rl-text-md); /* bumped from sm — × is a hit target, deserves a bit more weight */
 		line-height: 1;
-		padding: 0 4px var(--rl-space-sm);
+		/* Left-padding only. A right-pad stacks with the flex gap-md between wraps, making
+		   custom→custom gaps (FPT × FOX) visibly wider than fixed→fixed (BTC ETH). Keeping 0
+		   on the right so gap-md alone controls inter-tab spacing — consistent across tab kinds. */
+		padding: 0 0 var(--rl-space-sm) 4px;
 		margin-left: 2px;
 		color: var(--rl-color-text-faint);
 		background: transparent;

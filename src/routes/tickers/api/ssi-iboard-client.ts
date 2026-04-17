@@ -35,20 +35,27 @@ export interface IndexQuote {
 	totalValue: number // matched value (VND)
 }
 
-/** Individual stock quote — merges static company data + latest matched trade. */
+/**
+ * Individual stock quote — merges static company data + latest matched trade.
+ *
+ * Price scale note: `price`, `refPrice`, `change`, `ceiling`, `floor` are in **full VND per share**
+ * (e.g. FPT at 76,000 comes through as `76000`, not `76.0`). This matches SSI's `/stock/{symbol}` +
+ * `/le-table` endpoints, which return full-VND integers. The chart endpoint `/charts/history` uses
+ * a *different* scale (thousand-VND, so 76 = 76,000 VND) — don't confuse the two when wiring UI.
+ */
 export interface StockQuote {
 	symbol: string // 'FPT'
 	exchange: string // 'hose' | 'hnx' | 'upcom'
 	companyNameVi: string
 	companyNameEn: string
 	time: string // 'HH:MM:SS' — timestamp of last matched trade
-	price: number // latest matched price
-	refPrice: number // prior close / reference
-	change: number // priceChange
+	price: number // latest matched price, full VND/share
+	refPrice: number // prior close / reference, full VND/share
+	change: number // priceChange, full VND
 	pctChange: number // priceChangePercent
-	ceiling: number // upper trading band for today
-	floor: number // lower trading band for today
-	accumulatedVol: number // today's cumulative matched volume
+	ceiling: number // upper trading band for today, full VND/share
+	floor: number // lower trading band for today, full VND/share
+	accumulatedVol: number // today's cumulative matched volume (shares)
 	accumulatedVal: number // today's cumulative matched value (VND)
 	listedShare: number
 	parValue: number

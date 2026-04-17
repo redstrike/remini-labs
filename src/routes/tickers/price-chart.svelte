@@ -150,14 +150,18 @@
 				},
 				crosshair: {
 					mode: CrosshairMode.Normal,
+					// Alpha at 0.1 composited to near-grid luminance (grid is rgba(42,42,54,0.3)),
+					// so the crosshair disappeared into the mesh. 0.35 gives a clear contrast edge
+					// while still reading as an overlay rather than a chart feature. style:3 = dashed,
+					// kept distinct from the solid grid so the two layers don't collapse visually.
 					vertLine: {
-						color: 'rgba(255, 255, 255, 0.1)',
+						color: 'rgba(255, 255, 255, 0.35)',
 						width: 1,
 						style: 3,
 						labelBackgroundColor: '#121218',
 					},
 					horzLine: {
-						color: 'rgba(255, 255, 255, 0.1)',
+						color: 'rgba(255, 255, 255, 0.35)',
 						width: 1,
 						style: 3,
 						labelBackgroundColor: '#121218',
@@ -266,7 +270,7 @@
 														bitmapSize.width - Math.round(60 * horizontalPixelRatio)
 													const goLeft = totalRight > chartRight
 
-													context.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+													context.strokeStyle = 'rgba(255, 255, 255, 0.35)'
 													context.lineWidth = Math.max(1, horizontalPixelRatio)
 													context.beginPath()
 													if (goLeft) {

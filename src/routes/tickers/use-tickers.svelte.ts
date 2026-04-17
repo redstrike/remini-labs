@@ -610,7 +610,7 @@ export function formatVN100(value: number): string {
 	return vn100Fmt.format(value)
 }
 
-export const VN100_FORMATTER = {
+export const STOCK_FORMATTER = {
 	format: formatVN100,
 	formatCompact: formatVN100,
 	formatAxis: formatVN100,
