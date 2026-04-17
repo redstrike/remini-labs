@@ -4,11 +4,11 @@ Data sources, API endpoints, caching, polling, and market schedule for the Ticke
 
 ## Data sources
 
-| Asset class            | Upstream   | Endpoint                                                              | Auth | Notes                                                                    |
-| ---------------------- | ---------- | --------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------ |
-| Gold / silver          | Phu Quy    | `be.phuquy.com.vn` (proxied via SvelteKit API)                        | none | Origin-gated CORS — needs server proxy                                   |
-| Crypto (BTC, ETH, SOL) | Binance    | `api-gcp.binance.com/api/v3` (with `api.binance.com` mirror fallback) | none | AWS-fronted host blocked from CF Workers — GCP mirror is primary         |
-| VN stock index (VN100) | SSI iBoard | `iboard-query.ssi.com.vn` (quotes), `iboard-api.ssi.com.vn` (charts)  | none | Browser-shaped UA + `Origin: https://iboard.ssi.com.vn` headers required |
+| Asset class                | Upstream   | Endpoint                                                              | Auth | Notes                                                                    |
+| -------------------------- | ---------- | --------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------ |
+| Gold / silver              | Phu Quy    | `be.phuquy.com.vn` (proxied via SvelteKit API)                        | none | Origin-gated CORS — needs server proxy                                   |
+| Crypto (fixed + watchlist) | Binance    | `api-gcp.binance.com/api/v3` (with `api.binance.com` mirror fallback) | none | AWS-fronted host blocked from CF Workers — GCP mirror is primary         |
+| VN stocks + indices        | SSI iBoard | `iboard-query.ssi.com.vn` (quotes), `iboard-api.ssi.com.vn` (charts)  | none | Browser-shaped UA + `Origin: https://iboard.ssi.com.vn` headers required |
 
 Why SSI for VN: institutional-grade backend, rides through HOSE's 17:00–21:00 ICT post-close batch window that breaks VNDirect's `api-finfo` (ES shard failures).
 
@@ -23,6 +23,9 @@ VN100 over VNINDEX: free-float weighting, single-stock cap (10%), liquidity + pr
 | `/spots/stocks`  | VN100 index quote via SSI `iboard-query/exchange-index/VN100`                           |
 | `/charts/metals` | Daily OHLC candles via Phu Quy historical                                               |
 | `/charts/stocks` | Daily OHLC candles via SSI `iboard-api/statistics/charts/history` (UDF parallel arrays) |
+| `/search/crypto` | Symbol autocomplete — Binance `exchangeInfo` compacted to quote-grouped dict, 7d cache  |
+| `/search/stocks` | Symbol autocomplete — SSI `stock-info` master list, 7d cache, `{symbol, name, kind}`    |
+| `/stocks/quote`  | Individual stock quote via SSI `/stock/{SYMBOL}` + `/le-table/stock/{SYMBOL}`           |
 
 Crypto charts fetch direct from Binance browser-side (CORS-permissive) — no SvelteKit proxy.
 
@@ -73,10 +76,51 @@ All times ICT (UTC+7, no DST). Drives both client polling cadence and server cac
 - **Server cache TTL:** `max(60s, msUntilNextPoll())` fresh, `fresh + 5min` grace for upstream errors. Cache-Control scaled to phase.
 - **FreshnessDot:** TTL stretches to next scheduled fetch during closed hours so the dot stays green during known-stable drains rather than turning red.
 
+## Watchlist
+
+Personalized crypto + stock tickers. Fixed tickers (BTC/ETH/SOL, VN100) are always present; watchlist adds user-chosen pairs alongside them.
+
+### Persistence
+
+- **Storage:** `localStorage` key `tickers.watchlist` → `{ crypto: string[], stocks: string[] }`
+- **Cap:** 10 per asset class (filled + transient placeholders counted)
+- **SSR-safe:** `browser` guard on load; `try/catch` on write (Safari private mode)
+- **Normalization:** symbols stored uppercase, deduped on add
+
+### Symbol search
+
+Server-side search with 7-day cached dictionaries (Workers Cache, stale-while-revalidate via `waitUntil`). Dev mode (no Workers Cache) falls through to live fetch.
+
+- **Crypto dict shape:** `Record<quoteAsset, baseAsset[]>` — quote-grouped, ~30KB stringified
+- **Stock dict:** full `StockInfo[]` from SSI `stock-info` — all types (stock, index, warrant, futures, ETF, bond)
+- **Search ranking (crypto):** 6 tiers — baseExact → symbolExact → basePrefix → symbolPrefix → baseSubstring → symbolSubstring
+- **Search ranking (stocks):** symbolPrefix → symbolSubstring → nameSubstring (searches Vi + En + fullName)
+- **Result limit:** 10 per query
+- **Slash tolerance:** "/" stripped client-side so both "BNB/BTC" and "BNBBTC" match
+
+### Data flow
+
+- **Crypto watchlist:** merged into the fixed-symbol Binance batch call (`/ticker/24hr`). Same 5-min polling cycle, same visibility refetch. No separate polling loop.
+- **Stock watchlist:** parallel `Promise.allSettled` fetch via `/stocks/quote?symbol=X` per symbol. Rides the existing VN market schedule. Immediate fetch on mount (bypasses schedule delay for first load).
+- **Charts:** watchlist crypto → `fetchCryptoKlines(symbol)`, watchlist stocks → `/charts/stocks?symbol=X` (SSI handles both indices and stocks). Cache TTL follows asset type (crypto = 5 min, stock = VN market phase).
+
+### SSI type mapping (observed from live data)
+
+| SSI `type` | Kind    | Examples             |
+| ---------- | ------- | -------------------- |
+| `s`        | stock   | FPT, VIC, VCB        |
+| `i`        | index   | VN100, VN30, VNINDEX |
+| `w`        | warrant | CFPT2513             |
+| `f`        | futures | VN30F1M              |
+| `e`        | etf     | E1VFVN30             |
+| `b`        | bond    | VIC123029            |
+
 ## Crypto-specific details
 
-- **Symbols:** BTCUSDT, ETHUSDT, SOLUSDT
-- **Price display:** USDT (tiered precision: <100 → 2dp, 100–999 → 1dp, ≥1000 → 0dp)
+- **Fixed symbols:** BTCUSDT, ETHUSDT, SOLUSDT (always fetched)
+- **Watchlist symbols:** any valid Binance TRADING pair (validated against `exchangeInfo` via picker)
+- **Price display (USDT):** tiered precision: <100 → 2dp, 100–999 → 1dp, ≥1000 → 0dp, with `$` prefix
+- **Price display (non-USDT):** adaptive precision based on magnitude — ≥1000 → 2dp, ≥1 → 4dp, ≥0.01 → 6dp, <0.01 → 8dp. No `$` prefix; quote asset shown as unit label
 - **Charts:** Pre-built daily OHLC via Binance `/klines` (not raw points). Always fetches 1Y; shorter durations sliced client-side.
 - **Candle aggregation:** 3D/1W merge pre-built 1D candles (first open, last close, max high, min low).
 - **Mirror fallback:** `binanceFetch()` tries GCP first, falls back to AWS on `403`/`451` blocks or network errors. Sticky per V8 isolate via `activeIdx`.
@@ -103,8 +147,9 @@ Properties: error-isolated, Set-deduped, snapshot iteration.
 
 ## Formatting
 
-- **VND:** No fractional digits (1 VND is negligibly small)
-- **USDT:** Tiered precision (see Crypto)
+- **VND:** No fractional digits (1 VND is negligibly small). SSI returns prices in 1000s — multiplied by 1000 for display.
+- **USDT/stablecoins:** Tiered precision with `$` prefix (see Crypto)
+- **Non-stablecoin crypto:** Adaptive precision without `$` prefix; quote asset as unit label
 - **VN index:** 2 decimals, `1,775.65` style
 - **Date locale:** `en-GB` (dd/mm/yyyy date-first), avoids `vi-VN`'s time-first format
 - **Relative time:** "2 mins ago" for fresh data, full date after 24h for stale

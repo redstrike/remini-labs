@@ -4,7 +4,7 @@ App-specific design for the Tickers mini-app. For shell defaults (color tokens, 
 
 ## Identity
 
-- **Purpose:** Personal portfolio glance — gold/silver, major crypto, VN stock index.
+- **Purpose:** Personal portfolio glance — gold/silver, major crypto, VN stock index, plus a personalized watchlist (up to 10 crypto + 10 stock tickers).
 - **Mood:** TradingView-density meets CoinGecko-clean. Weighty, precise, not flashy.
 - **Reference sites:** TradingView (data density), CoinGecko (clean tables), Phu Quy (anti-pattern: cluttered SPA).
 - **Room background:** Inherits shell `--rl-color-bg`. No mini-app override.
@@ -20,8 +20,8 @@ Declared in `src/routes/tickers/tickers.css`, applied to `.tickers-root` (set by
 | `--rl-color-asset-gold`   | `#d4a03a` | SJC gold — rich gold, tied to XAU              |
 | `--rl-color-asset-silver` | `#a0a8b8` | PQ silver — lighter metallic, tied to XAG      |
 | `--rl-color-asset-btc`    | `#e8993a` | Bitcoin — bright orange, closer to brand       |
-| `--rl-color-asset-eth`    | `#6b7fcc` | Ethereum — saturated blue, closer to brand     |
-| `--rl-color-asset-sol`    | `#8a6db8` | Solana — deeper violet, closer to brand        |
+| `--rl-color-asset-eth`    | `#5b80e8` | Ethereum — brighter blue, closer to brand      |
+| `--rl-color-asset-sol`    | `#a566cf` | Solana — brighter violet, closer to brand      |
 | `--rl-color-asset-vn100`  | `#b87333` | VN100 — antique bronze (bull statue aesthetic) |
 
 ### Directional semantics
@@ -66,7 +66,8 @@ Specific size/weight assignments per data role. References the shell text scale.
 - **Container padding:** `--rl-space-lg` `--rl-space-md` (24px vertical, 16px horizontal)
 - **Chart section (mobile ≤639px):** Full viewport width via negative margins (`calc(-1 * var(--rl-space-md))`), 10px internal padding, no border-radius, no side borders
 - **Chart section header:** Two rows — asset tabs with freshness dot + refresh button (row 1, bg `--rl-color-surface` with bottom border), Candle + Interval controls (row 2, bg `--rl-color-chart-bg`)
-- **Chart tab row:** Horizontally scrollable via `.tickers-chart-tabs-scroll` with `overflow-x: auto` + thin scrollbar; status indicator pinned via sibling flex
+- **Card tab strip:** Horizontally scrollable (`overflow-x: auto`, hidden scrollbar, wheel-to-horizontal JS). Watchlist tabs render after fixed tabs with `×` close buttons. Tab creation animates left-to-right (180ms `cubicOut` `expandX` transition). `+` button is `position: sticky; right: 0` — flows after last tab when content fits, docks to right edge when overflowing (Chrome new-tab pattern).
+- **Chart tab row:** Horizontally scrollable via `.tickers-chart-tabs-scroll` with `overflow-x: auto` + hidden scrollbar; watchlist symbols appended after the fixed 6 (Gold/Silver/BTC/ETH/SOL/VN100); status indicator pinned via sibling flex
 - **Price scale nudge:** `position: relative; left: 5px` on `.tv-lightweight-charts td:nth-child(3)` to push price axis toward right edge
 
 ## Charts
@@ -90,6 +91,25 @@ Specific size/weight assignments per data role. References the shell text scale.
     - Candle size bonus: 1D=0, 3D=+1×step, 1W=+2×step
     - Tier thresholds use 1D-equivalent candle count (numCandles × sizeFactor) to keep tier stable across candle sizes
 
+## Watchlist tab UX
+
+Chrome-tab-inspired pattern for adding/managing custom tickers.
+
+- **+ button:** 18×18 circle (`border-radius: 50%`), `align-self: flex-start`, `position: sticky; right: 0` inside the scroll container. Invisible bg at rest (matches card surface); circle bg appears on hover. Hidden when `filled + placeholders >= 10` (per-asset-class cap).
+- **Placeholder tab:** clicking `+` creates a transient tab with an inline `<input>` (via `TickerTabInput` component). Input auto-expands width as user types (`width: max(3, len+1)ch`). No placeholder text.
+- **Popover suggestions:** shadcn-svelte `Popover` anchored to the input, portal-rendered (escapes `overflow: hidden`). OLED-optimized bg `var(--rl-color-bg)`, deep shadow `0 8px 24px rgba(0,0,0,0.6)`. Dark thin scrollbar. Results fetched via debounced server-side search (200ms). Keyboard nav: `↑`/`↓` cycle through results (wraps at bounds), `Enter` picks highlighted, `Esc` clears query or discards tab.
+- **Filled tabs:** display formatted pair label — USDT-quoted pairs strip the suffix (`ADAUSDT` → `ADA`), others show muted quote (`ETHBTC` → `ETH` + muted `/BTC` at `0.78em`). `×` button for removal. Brand accent color on active tab when base matches `BRAND_COLORS` map.
+- **Placeholders are transient** — cleared on page reload. Only filled tabs persist via `localStorage`.
+- **Expand animation:** new tab wraps animate width 0 → natural via custom Svelte `expandX` transition (180ms, `cubicOut`). Reverses on removal.
+
+### Brand colors (popular tokens)
+
+Applied to active watchlist tab text + underline when the pair's base asset matches. Hues slightly desaturated from canonical brand for OLED dark palette fit.
+
+`BTC #e8993a · ETH #5b80e8 · SOL #a566cf · BNB #d4a829 · XRP #5e9bc7 · ADA #4877c7 · DOGE #c4a644 · AVAX #d8595a · TRX #c45050 · LINK #5377c5 · MATIC/POL #8e6cc4 · DOT #c4528d · LTC #8b9aa8 · NEAR #4cbf86 · TON #4d9bc7 · ARB #4d8cc7 · OP #d8595a · APT #3ec8b3 · SUI #5badd9 · INJ #3ec8d8 · PEPE #5fb35a · SHIB #d8893a`
+
+Unmatched tokens use neutral white active state.
+
 ## Animations
 
 Layered on top of shell motion tokens:
@@ -100,6 +120,7 @@ Layered on top of shell motion tokens:
 - **Skeleton loading:** pulse opacity 0.4–1.0 (2s infinite)
 - **Refresh spinner:** 1s default, per-source override (metals 500ms, crypto 200ms) tuned to API latency
 - **Loading overlay:** progress bar (0→96% over 10s, fast-start curve) + blur(2px) + opacity(0.5), completes 90→100% + fade on data arrival
+- **Tab expand:** `expandX` custom Svelte transition — width animates 0 → measured natural width (180ms, `cubicOut`). Reverses on tab removal.
 
 ## Interaction
 
