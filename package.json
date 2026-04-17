@@ -23,7 +23,8 @@
 		"fmt:check": "oxfmt --check && prettier --check \"**/*.svelte\"",
 		"lint": "oxlint",
 		"lint:fix": "oxlint --fix",
-		"docs:fetch": "node scripts/fetch-docs.mts"
+		"docs:fetch": "node scripts/fetch-docs.mts",
+		"shadcn-svelte:sync": "node scripts/shadcn-svelte-sync.mts"
 	},
 	"dependencies": {
 		"lightweight-charts": "^5.1.0"
