@@ -34,21 +34,21 @@ A bridge block remaps shadcn-svelte's primitive tokens (`--background`, `--foreg
 
 ### Color tokens
 
-**Primitive ramp** — warm-leaning gray, OLED-optimized, cataract-friendly mid-tones:
+**Primitive ramp** — Tailwind neutral, OLED-optimized, cataract-friendly mid-tones:
 
 | Token                 | Value     | Notes                                         |
 | --------------------- | --------- | --------------------------------------------- |
-| `--rl-color-gray-950` | `#08080c` | Page bg — near-true-black, OLED power-optimal |
-| `--rl-color-gray-900` | `#11111a` | Surface lift                                  |
-| `--rl-color-gray-800` | `#1c1c28` | Surface raised, hover                         |
-| `--rl-color-gray-700` | `#2a2a36` | Border                                        |
-| `--rl-color-gray-600` | `#3a3a48` | Border strong                                 |
-| `--rl-color-gray-500` | `#6a6a72` | Faint text floor (≥4.7:1 on bg)               |
-| `--rl-color-gray-400` | `#82828a` | Subtle text                                   |
-| `--rl-color-gray-300` | `#a0a0a8` | Muted text                                    |
-| `--rl-color-gray-200` | `#c8c6c3` | Secondary text                                |
-| `--rl-color-gray-100` | `#e8e6e3` | Primary text — warm off-white, no glare       |
-| `--rl-color-gray-50`  | `#f0eeeb` | Highest emphasis, rare                        |
+| `--rl-color-gray-950` | `#0a0a0a` | Page bg — near-true-black, OLED power-optimal |
+| `--rl-color-gray-900` | `#171717` | Surface lift                                  |
+| `--rl-color-gray-800` | `#262626` | Surface raised, hover                         |
+| `--rl-color-gray-700` | `#404040` | Border                                        |
+| `--rl-color-gray-600` | `#525252` | Border strong                                 |
+| `--rl-color-gray-500` | `#737373` | Faint text floor (≥4.7:1 on bg)               |
+| `--rl-color-gray-400` | `#a3a3a3` | Subtle text                                   |
+| `--rl-color-gray-300` | `#d4d4d4` | Muted text                                    |
+| `--rl-color-gray-200` | `#e5e5e5` | Secondary text                                |
+| `--rl-color-gray-100` | `#f5f5f5` | Primary text — neutral off-white              |
+| `--rl-color-gray-50`  | `#fafafa` | Highest emphasis, rare                        |
 
 **Semantic surfaces** (rebind point for mini-apps):
 
@@ -89,15 +89,19 @@ A bridge block remaps shadcn-svelte's primitive tokens (`--background`, `--foreg
 
 ### Spacing
 
-T-shirt scale, 4px base unit. Token: `var(--rl-space-*)`.
+T-shirt scale, 4px base unit. Token: `var(--rl-space-*)`. **Stored as rem** so the mobile density shrink (below) cascades through every spacing consumer.
 
-`0(0) 2xs(2) xs(4) sm(8) md(16) lg(24) xl(32) 2xl(48) 3xl(64)`
+`0(0) 2xs(2) xs(4) sm(8) md(16) lg(24) xl(32) 2xl(48) 3xl(64)` — px-equivalents at 16px desktop base.
 
 Off-scale values (5, 6, 10, 12, 13, 20, 22, 28) stay inline as one-offs — they don't earn token slots until they recur across the project.
 
 ### Radius
 
-`--rl-radius-sm: 4px` (chips, badges) · `md: 6px` (buttons) · `lg: 12px` (cards) · `full: 9999px` (dots, pills)
+`--rl-radius-sm: 0.25rem` (chips, badges) · `md: 0.375rem` (buttons) · `lg: 0.75rem` (cards) · `full: 9999px` (dots, pills — stays px as a sentinel).
+
+### Mobile density (≤720px)
+
+`html { font-size: 14px }` — drops the root from 16 to 14. Every rem-based token (spacing, radius, text, shadcn component sizes) shrinks ~12.5% in one step. Desktop unchanged. One knob; no per-component overrides needed.
 
 ### Typography
 
@@ -107,7 +111,7 @@ Off-scale values (5, 6, 10, 12, 13, 20, 22, 28) stay inline as one-offs — they
 
 **Size scale** — t-shirt, covers 10–32px:
 
-`--rl-text-2xs(10) xs(11) sm(12) base(14) md(16) lg(18) xl(20) 2xl(24) 3xl(32)`
+`--rl-text-2xs(10) xs(11) sm(12) base(14) md(16) lg(18) xl(20) 2xl(24) 3xl(32)` — px-equivalents at 16px desktop base; stored as rem.
 
 Sub-10px (8, 9) stays inline — too rare to standardize. Per-role size assignments (e.g. "crypto price", "metal price") live in per-mini-app DESIGN files.
 
