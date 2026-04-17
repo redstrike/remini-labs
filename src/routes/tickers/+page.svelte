@@ -10,7 +10,7 @@
 		USDT_FORMATTER,
 		VN100_FORMATTER,
 	} from './use-tickers.svelte'
-	import { Skeleton } from '$lib/components/ui/skeleton/index.js'
+	import { Skeleton } from '$lib/components/shadcn-svelte/skeleton/index.js'
 	import { LoadingOverlay } from '$lib/components/remini-labs/loading-overlay/index.js'
 	import { FreshnessDot } from '$lib/components/remini-labs/freshness-dot/index.js'
 	import { RefreshCw as SpinnerIcon, TriangleAlert } from '@lucide/svelte'

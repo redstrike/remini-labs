@@ -1,5 +1,5 @@
 <script lang="ts">
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
+	import * as Sidebar from '$lib/components/shadcn-svelte/sidebar/index.js'
 	import { LayoutDashboard, CloudRain, TrendingUp } from '@lucide/svelte'
 
 	let { isHome = false, closeSidebar = () => {} }: { isHome?: boolean; closeSidebar?: () => void } = $props()

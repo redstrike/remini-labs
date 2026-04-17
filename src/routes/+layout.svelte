@@ -1,8 +1,8 @@
 <script lang="ts">
 	import '../app.css'
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
+	import * as Sidebar from '$lib/components/shadcn-svelte/sidebar/index.js'
 	import AppSidebar from '$lib/components/app-sidebar.svelte'
-	import { Button } from '$lib/components/ui/button/index.js'
+	import { Button } from '$lib/components/shadcn-svelte/button/index.js'
 	import { House } from '@lucide/svelte'
 	import { page } from '$app/state'
 	import { browser } from '$app/environment'

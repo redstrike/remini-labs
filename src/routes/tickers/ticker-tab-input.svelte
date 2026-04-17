@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte'
-	import * as Popover from '$lib/components/ui/popover/index.js'
+	import * as Popover from '$lib/components/shadcn-svelte/popover/index.js'
 
 	type CryptoResult = { symbol: string; base: string; quote: string }
 	type StockResult = { symbol: string; name: string; kind: string }
