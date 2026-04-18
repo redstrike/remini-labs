@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit'
 
+import { DEFAULT_INDEX_SYMBOL, fetchChart } from '../../../shared/ssi-iboard-client'
 import { msUntilNextPoll } from '../../../vn-stock-schedule'
-import { DEFAULT_INDEX_SYMBOL, fetchChart } from '../../ssi-iboard-client'
 import type { RequestHandler } from './$types'
 
 const MIN_FRESH_MS = 10 * 1000 // debounce floor — dedup rapid-fire requests

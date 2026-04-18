@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit'
 
+import { DEFAULT_INDEX_SYMBOL, fetchIndexQuote } from '../../../shared/ssi-iboard-client'
 import { msUntilNextPoll } from '../../../vn-stock-schedule'
-import { DEFAULT_INDEX_SYMBOL, fetchIndexQuote } from '../../ssi-iboard-client'
 import type { RequestHandler } from './$types'
 
 const MIN_FRESH_MS = 60 * 1000 // floor — never cache shorter than 60s even if schedule says 0

@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit'
 
-import { fetchCryptoDict, searchCryptoDict, type CryptoDict } from '../../binance-client'
+import { fetchCryptoDict, searchCryptoDict, type CryptoDict } from '../../../shared/binance-client'
 import type { RequestHandler } from './$types'
 
 const CACHE_KEY = 'https://remini-labs.internal/tickers/api/search/crypto/dict'

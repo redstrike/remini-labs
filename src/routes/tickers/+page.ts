@@ -1,8 +1,8 @@
 import { browser } from '$app/environment'
 
-import type { CryptoTicker } from './api/binance-client'
-import type { PriceTable } from './api/phuquy-client'
-import type { IndexQuote } from './api/ssi-iboard-client'
+import type { CryptoTicker } from './shared/binance-client'
+import type { PriceTable } from './shared/phuquy-client'
+import type { IndexQuote } from './shared/ssi-iboard-client'
 
 export const load = async ({ fetch }) => {
 	try {

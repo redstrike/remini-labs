@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit'
 
-import { fetchPriceTable } from '../../phuquy-client'
+import { fetchPriceTable } from '../../../shared/phuquy-client'
 import type { RequestHandler } from './$types'
 
 const CACHE_KEY = 'https://remini-labs.internal/tickers/api/spots/metals'

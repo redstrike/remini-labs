@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit'
 
-import { fetchCryptoTickers } from '../../binance-client'
+import { fetchCryptoTickers } from '../../../shared/binance-client'
 import { probeCache } from '../../cache'
 import type { RequestHandler } from './$types'
 

@@ -6,9 +6,9 @@ import {
 	fetchCryptoKlines,
 	type CryptoTicker,
 	type CryptoSymbol,
-} from './api/binance-client'
-import type { PriceTable, ChartData } from './api/phuquy-client'
-import type { IndexQuote, StockQuote } from './api/ssi-iboard-client'
+} from './shared/binance-client'
+import type { PriceTable, ChartData } from './shared/phuquy-client'
+import type { IndexQuote, StockQuote } from './shared/ssi-iboard-client'
 import { createWatchlist } from './use-watchlist.svelte'
 import { STOCKS_POLL_MS, computeNextPollTime, msUntilNextPoll } from './vn-stock-schedule'
 

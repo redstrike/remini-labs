@@ -14,7 +14,7 @@
 	import { LoadingOverlay } from '$lib/components/remini-labs/loading-overlay/index.js'
 	import { FreshnessDot } from '$lib/components/remini-labs/freshness-dot/index.js'
 	import { RefreshCw as SpinnerIcon, TriangleAlert } from '@lucide/svelte'
-	import { formatCryptoDisplay, splitCryptoSymbol } from './api/binance-client'
+	import { formatCryptoDisplay, splitCryptoSymbol } from './shared/binance-client'
 	import PriceChart, { type CandleSize } from './price-chart.svelte'
 	import TickerTabInput from './ticker-tab-input.svelte'
 	import { page } from '$app/state'

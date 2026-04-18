@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit'
 
-import { fetchChartData } from '../../phuquy-client'
+import { fetchChartData } from '../../../shared/phuquy-client'
 import type { RequestHandler } from './$types'
 
 export const GET: RequestHandler = async ({ url }) => {

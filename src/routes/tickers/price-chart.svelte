@@ -4,7 +4,7 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte'
-	import type { ChartData, OHLCCandle } from './api/phuquy-client'
+	import type { ChartData, OHLCCandle } from './shared/phuquy-client'
 
 	export interface PriceFormatConfig {
 		format: (v: number) => string

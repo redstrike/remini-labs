@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit'
 
-import { fetchStockList, searchStocks, type StockInfo } from '../../ssi-iboard-client'
+import { fetchStockList, searchStocks, type StockInfo } from '../../../shared/ssi-iboard-client'
 import type { RequestHandler } from './$types'
 
 const CACHE_KEY = 'https://remini-labs.internal/tickers/api/search/stocks/dict'

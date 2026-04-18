@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit'
 
+import { fetchStockQuote } from '../../../shared/ssi-iboard-client'
 import { msUntilNextPoll } from '../../../vn-stock-schedule'
-import { fetchStockQuote } from '../../ssi-iboard-client'
 import type { RequestHandler } from './$types'
 
 const MIN_FRESH_MS = 60 * 1000
