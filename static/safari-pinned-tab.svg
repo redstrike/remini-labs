@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+	Safari pinned-tab mask icon. Monochrome (black fill on transparent bg);
+	Safari ignores colors inside the SVG and tints the shape with the "color"
+	attribute on <link rel="mask-icon"> in app.html (brand magenta #E8318A).
+	Renders at ~16px in Safari's pinned-tab strip, so detail is unnecessary —
+	a crisp bold "R" silhouette carries the brand.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+	<text
+		x="8"
+		y="13"
+		text-anchor="middle"
+		font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
+		font-weight="900"
+		font-size="14"
+		fill="#000000">R</text>
+</svg>

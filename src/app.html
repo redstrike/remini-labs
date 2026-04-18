@@ -2,9 +2,15 @@
 <html lang="en" class="dark">
 	<head>
 		<meta charset="utf-8" />
+		<!-- viewport: allow pinch-zoom for accessibility (WCAG 1.4.4) — single source of truth, do NOT duplicate in +layout.svelte -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="color-scheme" content="dark" />
+		<meta name="application-name" content="Remini Labs" />
+		<meta name="author" content="redstrike (Tung Nguyen)" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
-		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+		<link rel="mask-icon" href="%sveltekit.assets%/safari-pinned-tab.svg" color="#E8318A" />
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
 		%sveltekit.head%
 	</head>
 	<body

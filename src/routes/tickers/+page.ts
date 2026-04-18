@@ -25,8 +25,30 @@ export const load = async ({ fetch }) => {
 		const cryptoCachedAt = cryptoRes.ok ? Number(cryptoRes.headers.get('X-Cached-At') || 0) : 0
 		const vn100: IndexQuote | null = vn100Res.ok ? await vn100Res.json() : null
 
-		return { meta: { appName: 'Tickers' }, table, crypto, cryptoCachedAt, vn100 }
+		return {
+			meta: {
+				appName: 'Tickers',
+				description:
+					'Live gold, silver, crypto, and VN stock index prices with candlestick charts. A Remini Labs mini-app by redstrike.',
+				ogImage: '/og-tickers.png',
+			},
+			table,
+			crypto,
+			cryptoCachedAt,
+			vn100,
+		}
 	} catch {
-		return { meta: { appName: 'Tickers' }, table: null, crypto: null, cryptoCachedAt: 0, vn100: null }
+		return {
+			meta: {
+				appName: 'Tickers',
+				description:
+					'Live gold, silver, crypto, and VN stock index prices with candlestick charts. A Remini Labs mini-app by redstrike.',
+				ogImage: '/og-tickers.png',
+			},
+			table: null,
+			crypto: null,
+			cryptoCachedAt: 0,
+			vn100: null,
+		}
 	}
 }
