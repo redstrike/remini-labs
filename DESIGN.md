@@ -152,6 +152,8 @@ Named tiers prevent number drift: `--rl-z-base(0) raised(10) dropdown(20) sticky
 ## App Shell / Branding
 
 - **Brand name:** Remini Labs
+- **Brand assets:** See `artwork/brand/README.md` — canonical 2560 master, provenance, usage rules. Runtime icons (`static/favicon*.png`, `static/apple-touch-icon.png`) are regenerated from the master via `pnpm gen:brand-assets`.
+- **Brand accent:** `#E8318A` (magenta) — used in Safari pinned-tab tint, default OG card accent ring, body text selection
 - **Page title:** `{AppName} — Remini Labs` (e.g., "Tickers — Remini Labs")
 - **Meta description:** Includes AI tools used (Claude Code, Antigravity), mini-app names
 - **Sidebar header:** Favicon (20px) + "Remini Labs" (text-sm, font-semibold, tracking-tight), links to home
