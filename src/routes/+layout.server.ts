@@ -1,4 +1,9 @@
-export const load = ({ cookies, url }) => {
+import type { LayoutServerLoad } from './$types'
+
+const CACHE_CONTROL = 'public, max-age=86400, must-revalidate'
+
+export const load: LayoutServerLoad = ({ cookies, url, locals }) => {
+	locals.cacheControl = CACHE_CONTROL
 	const sidebarState = cookies.get('sidebar:state')
 	return {
 		sidebarOpen: sidebarState !== 'false',

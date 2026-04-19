@@ -3,7 +3,9 @@ import type { CacheStorage, ExecutionContext, IncomingRequestCfProperties } from
 declare global {
 	namespace App {
 		// interface Error {}
-		// interface Locals {}
+		interface Locals {
+			cacheControl?: string
+		}
 		interface PageData {
 			// Per-route overrides for title, meta description, and social preview image.
 			// Shell fills defaults in +layout.svelte; apps set only what they want to override.
