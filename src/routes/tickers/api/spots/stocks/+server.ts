@@ -5,14 +5,10 @@ import { msUntilNextPoll } from '../../../vn-stock-schedule'
 import type { RequestHandler } from './$types'
 
 const MIN_FRESH_MS = 60 * 1000 // floor — never cache shorter than 60s even if schedule says 0
-const STALE_GRACE_MS = 5 * 60 * 1000 // extra window where upstream errors serve stale
 const SYMBOL_RE = /^[A-Z0-9]+$/ // VN symbols are uppercase alphanumeric (e.g. VN100, VNINDEX, FPT)
 
-/** Fresh/stale TTLs aligned with the VN stock market schedule. */
-function computeTtls(): { freshMs: number; staleMs: number } {
-	const freshMs = Math.max(MIN_FRESH_MS, msUntilNextPoll())
-	const staleMs = freshMs + STALE_GRACE_MS
-	return { freshMs, staleMs }
+function computeFreshMs(): number {
+	return Math.max(MIN_FRESH_MS, msUntilNextPoll())
 }
 
 export const GET: RequestHandler = async ({ url }) => {
@@ -24,7 +20,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	const cacheKey = `https://remini-labs.internal/tickers/api/spots/stocks?symbol=${symbol}`
 	const cache = (await globalThis.caches?.open('tickers')) ?? null
-	const { freshMs, staleMs } = computeTtls()
+	const freshMs = computeFreshMs()
 
 	if (cache) {
 		const cached = await cache.match(cacheKey)
@@ -38,7 +34,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		const quote = await fetchIndexQuote(symbol)
 		const response = json(quote, {
 			headers: {
-				'Cache-Control': `private, max-age=${Math.floor(freshMs / 1000)}`,
+				'Cache-Control': `public, max-age=${Math.floor(freshMs / 1000)}, must-revalidate`,
 				'X-Cached-At': String(Date.now()),
 			},
 		})
@@ -49,14 +45,6 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		return response
 	} catch (e) {
-		if (cache) {
-			const stale = await cache.match(cacheKey)
-			if (stale) {
-				const cachedAt = Number(stale.headers.get('X-Cached-At') || 0)
-				if (Date.now() - cachedAt < staleMs) return stale.clone()
-			}
-		}
-
 		console.error('SSI iBoard exchange-index error:', e)
 		return json({ error: `Unable to fetch ${symbol} quote` }, { status: 502 })
 	}

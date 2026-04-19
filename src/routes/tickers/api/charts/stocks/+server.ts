@@ -35,7 +35,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		const chartData = await fetchChart(symbol)
 		const response = json(chartData, {
 			headers: {
-				'Cache-Control': `private, max-age=${Math.floor(freshMs / 1000)}`,
+				'Cache-Control': `public, max-age=${Math.floor(freshMs / 1000)}, must-revalidate`,
 				'X-Cached-At': String(Date.now()),
 			},
 		})

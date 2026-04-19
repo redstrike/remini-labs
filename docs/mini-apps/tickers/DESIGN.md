@@ -106,7 +106,7 @@ Chrome-tab-inspired pattern for adding/managing custom tickers.
 
 Applied to active watchlist tab text + underline when the pair's base asset matches. Hues slightly desaturated from canonical brand for OLED dark palette fit.
 
-`BTC #e8993a · ETH #5b80e8 · SOL #a566cf · BNB #d4a829 · XRP #5e9bc7 · ADA #4877c7 · DOGE #c4a644 · AVAX #d8595a · TRX #c45050 · LINK #5377c5 · MATIC/POL #8e6cc4 · DOT #c4528d · LTC #8b9aa8 · NEAR #4cbf86 · TON #4d9bc7 · ARB #4d8cc7 · OP #d8595a · APT #3ec8b3 · SUI #5badd9 · INJ #3ec8d8 · PEPE #5fb35a · SHIB #d8893a`
+`BTC #e8993a · ETH #5b80e8 · SOL #a566cf · USDT #4dab8c · USDC #4f8cc9 · BNB #d4a829 · XRP #5e9bc7 · ADA #4877c7 · DOGE #c4a644 · AVAX #d8595a · TRX #c45050 · LINK #5377c5 · MATIC/POL #8e6cc4 · DOT #c4528d · LTC #8b9aa8 · NEAR #4cbf86 · ATOM #7479a8 · TON #4d9bc7 · ARB #4d8cc7 · OP #d8595a · APT #3ec8b3 · SUI #5badd9 · INJ #3ec8d8 · PEPE #5fb35a · SHIB #d8893a · HBAR #a8a8b0 · FIL #4d9bc7`
 
 Unmatched tokens use neutral white active state.
 
@@ -118,7 +118,7 @@ Layered on top of shell motion tokens:
 - **Chip toggle:** background+color — `var(--rl-duration-micro)` `var(--rl-ease-move)`
 - **Card hover:** background — `var(--rl-duration-short)` `var(--rl-ease-move)`
 - **Skeleton loading:** pulse opacity 0.4–1.0 (2s infinite)
-- **Refresh spinner:** 1s default, per-source override (metals 500ms, crypto 200ms) tuned to API latency
+- **Refresh spinner:** 1s default, per-source override (metals 500ms, crypto 200ms, stocks 400ms); chart section hardcoded 500ms — all tuned to avg API latency
 - **Loading overlay:** progress bar (0→96% over 10s, fast-start curve) + blur(2px) + opacity(0.5), completes 90→100% + fade on data arrival
 - **Tab expand:** `expandX` custom Svelte transition — width animates 0 → measured natural width (180ms, `cubicOut`). Reverses on tab removal.
 

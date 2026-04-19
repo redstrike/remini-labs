@@ -15,7 +15,7 @@ async function buildAndStore(cache: Cache | null): Promise<CryptoDict> {
 			new Response(JSON.stringify(dict), {
 				headers: {
 					'Content-Type': 'application/json',
-					'Cache-Control': `public, s-maxage=${Math.floor(FRESH_MS / 1000)}, max-age=0`,
+					'Cache-Control': 'public, max-age=604800, must-revalidate',
 					'X-Cached-At': String(Date.now()),
 				},
 			}),
@@ -54,5 +54,5 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		}
 	}
 
-	return json(searchCryptoDict(q, dict))
+	return json(searchCryptoDict(q, dict), { headers: { 'Cache-Control': 'public, max-age=604800, must-revalidate' } })
 }

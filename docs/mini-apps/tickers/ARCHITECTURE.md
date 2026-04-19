@@ -35,17 +35,21 @@ The `api/` folder is **server-side scope only**. Shared client+server utilities 
 
 All server-side caching uses Cloudflare Workers Cache API (`caches.open('tickers')`).
 
-| Endpoint         | Debounce TTL                                                 | Stale fallback | Cache-Control header                                              |
-| ---------------- | ------------------------------------------------------------ | -------------- | ----------------------------------------------------------------- |
-| `/spots/metals`  | 60s                                                          | 1h             | `public, s-maxage=3600, max-age=0, stale-if-error=3600`           |
-| `/spots/crypto`  | 60s                                                          | 1h             | `public, s-maxage=3600, max-age=0, stale-if-error=3600`           |
-| `/spots/stocks`  | phase-aware (60s during trading, hours during closed market) | +5min grace    | `public, s-maxage=<phase>, max-age=0, stale-if-error=<phase+300>` |
-| `/charts/metals` | 60s                                                          | 1h             | same as spots                                                     |
-| `/charts/stocks` | 60s                                                          | 1h             | same as spots                                                     |
+| Endpoint         | Workers Cache debounce                                    | Stale fallback     | Cache-Control header                       |
+| ---------------- | --------------------------------------------------------- | ------------------ | ------------------------------------------ |
+| `/spots/metals`  | 900s                                                      | none               | `public, max-age=900, must-revalidate`     |
+| `/spots/crypto`  | 300s (`probeCache`)                                       | none               | `public, max-age=300, must-revalidate`     |
+| `/spots/stocks`  | phase-aware (min 60s during trading, hours during closed) | none               | `public, max-age=<phase>, must-revalidate` |
+| `/charts/metals` | 900s                                                      | none               | `public, max-age=900, must-revalidate`     |
+| `/charts/stocks` | phase-aware (min 10s)                                     | none               | `public, max-age=<phase>, must-revalidate` |
+| `/search/crypto` | 7d; stale-while-revalidate via `waitUntil`                | dict always served | `public, max-age=604800, must-revalidate`  |
+| `/search/stocks` | 7d; stale-while-revalidate via `waitUntil`                | dict always served | `public, max-age=604800, must-revalidate`  |
 
 `X-Cached-At` header stamps storage time (Workers Cache ignores `Cache-Control` for `cache.match()` — manual TTL check needed in `probeCache()`).
 
-`probeCache(key, ttl)` helper in `src/routes/tickers/api/cache.ts` returns `{ debounced, cached, cache }` — debounced response if within TTL, raw cached for stale-on-error fallback, cache handle for `cache.put` after fresh fetch.
+`probeCache(key, ttl)` helper in `src/routes/tickers/api/cache.ts` returns `{ debounced, cached, cache }` — debounced response if within TTL, cache handle for `cache.put` after a fresh fetch. `cached` (age-unlimited) is still returned by the function but no endpoint currently implements stale-on-error.
+
+**SSR chart cache warming:** `+page.ts` fires a background `fetch('/tickers/api/charts/metals')` during SSR (`!browser` guard, `.catch(() => {})` discarded). No payload returned to client — pure pre-warm to seed the CF Workers Cache before the first browser-side chart request.
 
 ## Client polling
 
@@ -55,9 +59,13 @@ All server-side caching uses Cloudflare Workers Cache API (`caches.open('tickers
 | Crypto (Binance) | 5 min                | 5 min                                     |
 | Stocks (SSI)     | phase-aware schedule | dynamic (stretches across closed hours)   |
 
-Polling primitive: self-rescheduling `setTimeout` (not `setInterval`) — unifies trading cadence and closed-hour drains under one `expiresAt` concept; zero wasted wakes on Saturdays or overnight.
+Polling primitives: metals and crypto use `setInterval` (fixed cadence); stocks use self-rescheduling `setTimeout` — unifies trading cadence and closed-hour drains under one `expiresAt` concept; zero wasted wakes on Saturdays or overnight.
 
 On tab resume (visibility change): fetch metals/crypto if last fetch > 10s ago; stocks only if `Date.now() >= computeNextPollTime(lastFetch)`.
+
+On mount: if SSR crypto data is older than `SSR_FRESHNESS_MS = 60s` (equals server debounce window), triggers an immediate Binance refetch rather than waiting for the first poll interval.
+
+Chart loading indicator: shown only if a chart fetch takes longer than `LOADING_DELAY_MS = 250ms` — prevents a flash on fast network connections.
 
 ## VN market schedule (`src/routes/tickers/vn-stock-schedule.ts`)
 
@@ -73,7 +81,7 @@ All times ICT (UTC+7, no DST). Drives both client polling cadence and server cac
 | weekend    | Sat / Sun (all day)   | next Mon 09:00                                 | until next Mon 09:00 |
 
 - **VN holidays (Tết, 30/4, 2/9) are NOT modeled** — app polls in vain on those days, upstream serves stale. Accepted trade-off.
-- **Server cache TTL:** `max(60s, msUntilNextPoll())` fresh, `fresh + 5min` grace for upstream errors. Cache-Control scaled to phase.
+- **Server cache TTL:** `max(60s, msUntilNextPoll())` for spot quotes, `max(10s, msUntilNextPoll())` for chart data. No stale-on-error serving. Cache-Control scaled to phase.
 - **FreshnessDot:** TTL stretches to next scheduled fetch during closed hours so the dot stays green during known-stable drains rather than turning red.
 
 ## Watchlist
@@ -119,7 +127,7 @@ Server-side search with 7-day cached dictionaries (Workers Cache, stale-while-re
 
 - **Fixed symbols:** BTCUSDT, ETHUSDT, SOLUSDT (always fetched)
 - **Watchlist symbols:** any valid Binance TRADING pair (validated against `exchangeInfo` via picker)
-- **Price display (USDT):** tiered precision: <100 → 2dp, 100–999 → 1dp, ≥1000 → 0dp, with `$` prefix
+- **Price display (stablecoin quotes — USDT, USDC, FDUSD, TUSD, BUSD, DAI):** tiered precision: <100 → 2dp, 100–999 → 1dp, ≥1000 → 0dp, with `$` prefix
 - **Price display (non-USDT):** adaptive precision based on magnitude — ≥1000 → 2dp, ≥1 → 4dp, ≥0.01 → 6dp, <0.01 → 8dp. No `$` prefix; quote asset shown as unit label
 - **Charts:** Pre-built daily OHLC via Binance `/klines` (not raw points). Always fetches 1Y; shorter durations sliced client-side.
 - **Candle aggregation:** 3D/1W merge pre-built 1D candles (first open, last close, max high, min low).
@@ -148,7 +156,7 @@ Properties: error-isolated, Set-deduped, snapshot iteration.
 ## Formatting
 
 - **VND:** No fractional digits (1 VND is negligibly small). SSI returns prices in 1000s — multiplied by 1000 for display.
-- **USDT/stablecoins:** Tiered precision with `$` prefix (see Crypto)
+- **Stablecoin quotes** (`USDT, USDC, FDUSD, TUSD, BUSD, DAI`): Tiered precision with `$` prefix (see Crypto)
 - **Non-stablecoin crypto:** Adaptive precision without `$` prefix; quote asset as unit label
 - **VN index:** 2 decimals, `1,775.65` style
 - **Date locale:** `en-GB` (dd/mm/yyyy date-first), avoids `vi-VN`'s time-first format

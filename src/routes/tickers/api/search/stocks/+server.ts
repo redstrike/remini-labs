@@ -28,7 +28,7 @@ async function buildAndStore(cache: Cache | null): Promise<StockInfo[]> {
 			new Response(JSON.stringify(list), {
 				headers: {
 					'Content-Type': 'application/json',
-					'Cache-Control': `public, s-maxage=${Math.floor(FRESH_MS / 1000)}, max-age=0`,
+					'Cache-Control': 'public, max-age=604800, must-revalidate',
 					'X-Cached-At': String(Date.now()),
 				},
 			}),
@@ -74,5 +74,5 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		kind: KIND_MAP[r.type] ?? r.type,
 	}))
 
-	return json(matches)
+	return json(matches, { headers: { 'Cache-Control': 'public, max-age=604800, must-revalidate' } })
 }
