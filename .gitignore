@@ -21,3 +21,6 @@ vite.config.ts.timestamp-*
 
 # External docs cache (fetched on demand via `pnpm docs:fetch`)
 docs/.cache/
+
+# Ad-hoc screenshots from visual QA / chrome-devtools captures
+.screenshots/
