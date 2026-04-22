@@ -28,11 +28,11 @@ Declared in `src/routes/tickers/tickers.css`, applied to `.tickers-root` (set by
 
 Western convention across **all** asset classes (crypto, metals, stocks). VN broker UIs offer inverted red=up as a user preference; we stick with Western for cross-asset consistency.
 
-| Token               | Value     | Use                                       |
-| ------------------- | --------- | ----------------------------------------- |
-| `--rl-color-up`     | `#2d9f6f` | Price up, gain (muted green)              |
-| `--rl-color-down`   | `#c44e4e` | Price down, loss (muted red)              |
-| `--rl-color-spread` | `#d4874d` | Buy/sell spread, range hi/lo (warm amber) |
+| Token               | Value     | Use                              |
+| ------------------- | --------- | -------------------------------- |
+| `--rl-color-up`     | `#2d9f6f` | Price up, gain (muted green)     |
+| `--rl-color-down`   | `#c44e4e` | Price down, loss (muted red)     |
+| `--rl-color-spread` | `#d4874d` | Range hi/lo markers (warm amber) |
 
 ### Tickers surfaces
 
@@ -50,7 +50,7 @@ Specific size/weight assignments per data role. References the shell text scale.
 | Metal price        | mono   | 16px (`--rl-text-md`)  | 700                    | -0.3px                           |
 | Period change      | mono   | 18px (`--rl-text-lg`)  | 700                    | -0.5px                           |
 | VN index value     | mono   | 16px (`--rl-text-md`)  | 700                    | — (2 decimals, "PTS" unit label) |
-| Spread             | mono   | 13px                   | 600                    | —                                |
+| Metal 24H / range  | mono   | 12px (`--rl-text-sm`)  | 600                    | —                                |
 | OHLC values        | mono   | 11px (`--rl-text-xs`)  | 600                    | —                                |
 | Chart axis         | mono   | 10px (`--rl-text-2xs`) | —                      | —                                |
 | Card label         | sans   | 12px (`--rl-text-sm`)  | 600                    | 0.3px / uppercase                |
@@ -63,12 +63,71 @@ Specific size/weight assignments per data role. References the shell text scale.
 - **Max content width:** 860px (responsive: single column on mobile, two-column cards at 640px+)
 - **Card padding:** 20px (off-scale exception — tickers convention)
 - **Card gap:** `--rl-space-md` (16px)
+- **Cards grid `align-items: start`:** each spot card sizes to its own content; expanding one card (e.g. the VCB Forex 19rem-max table) no longer stretches its row-sibling. `min-height: 215px` on `.tickers-card` still floors any empty-body state (new-tab placeholder).
 - **Container padding:** `--rl-space-lg` `--rl-space-md` (24px vertical, 16px horizontal)
 - **Chart section (mobile ≤639px):** Full viewport width via negative margins (`calc(-1 * var(--rl-space-md))`), 10px internal padding, no border-radius, no side borders
 - **Chart section header:** Two rows — asset tabs with freshness dot + refresh button (row 1, bg `--rl-color-surface` with bottom border), Candle + Interval controls (row 2, bg `--rl-color-chart-bg`)
 - **Card tab strip:** Horizontally scrollable (`overflow-x: auto`, hidden scrollbar, wheel-to-horizontal JS). Watchlist tabs render after fixed tabs with `×` close buttons. Tab creation animates left-to-right (180ms `cubicOut` `expandX` transition). `+` button is `position: sticky; right: 0` — flows after last tab when content fits, docks to right edge when overflowing (Chrome new-tab pattern).
 - **Chart tab row:** Horizontally scrollable via `.tickers-chart-tabs-scroll` with `overflow-x: auto` + hidden scrollbar; watchlist symbols appended after the fixed 6 (Gold/Silver/BTC/ETH/SOL/VN100); status indicator pinned via sibling flex
 - **Price scale nudge:** `position: relative; left: 5px` on `.tv-lightweight-charts td:nth-child(3)` to push price axis toward right edge
+
+### Bullion card (Gold SJC, Silver PQ) + Forex tab
+
+One card holds two tabs — **Bullion** (default) and **VCB Forex** — sharing a single header strip with freshness dot + refresh button. The Bullion tab shows both metals at-a-glance; tapping a row expands a scrollable foreign-currency sub-panel. The forex tab surfaces the full VCB rate table.
+
+#### Shared 6-column grid (Bullion)
+
+```
+22px | 3rem  | 1fr  | 1fr  | 1fr  | 1fr
+icon   label   BUY    SELL   AVG    24H
+```
+
+`column-gap: 10px`. Numeric columns are proportional (`1fr` × 4) so BUY/SELL/AVG/24H stay balanced at every viewport and the grid anchors to both card edges. Fixed col 1 (22px) = ingot width; fixed col 2 (3rem) = "Gold"/"Silver" label width.
+
+#### Main metal rows
+
+- **Ingot icon** (22×22) — SJC gold bar and PQ silver bar SVGs under `assets/metals/`. Col 1 flush-left.
+- **Label** — "Gold" / "Silver". No unit suffix on the label; the footer line carries unit context once: `Gold per Lượng · Silver per Kg · 1 kVND = 1,000 VND`.
+- **BUY / SELL / AVG** — kVND values via `formatKVND` (tiered rule from `shared/number-format.ts`). **AVG is the promoted headline** (`.tickers-metal-avg` → bright text, semibold) — mid-market reference is the unbiased glance value; BUY/SELL muted one tier.
+- **24H** — per-metal change % + a small disclosure chevron. Chevron rotates 180° when the row is expanded. Button element (native keyboard + `aria-expanded` + `aria-controls`).
+- **Flat → `—`** via `formatPctSigned`. No misleading `0.00%` pre-open.
+
+#### Expand-on-tap sub-panel (foreign currency rates)
+
+Tapping Gold or Silver reveals a scrollable sub-panel inside the same card — converts the metal's VND buy/sell/avg into every VCB currency. Exclusive: one metal expanded at a time.
+
+- **Layout:** subgrid inheriting the 6 parent tracks, so BUY/SELL/AVG values line up pixel-perfect with the parent row's columns.
+- **Asset cell** (flag + code): spans cols 1–2 (`grid-column: 1 / 3`), `justify-content: center`. Visually centers the pair between the ingot and label — reads as a "child hanging under the parent" nested-tree signal, not a competing label.
+- **Scroll:** `max-height: 14rem`, same tuned scrollbar as the VCB Forex table.
+- **Flags:** 18×12 (country-flag aspect), not round — distinct from VCB Forex's round flags so the sub-panel reads as a reference list, not a primary table.
+- **Values:** `formatForeign(vnd, rate.avg)` in `vi-VN` locale (dot-thousands, matching the main kVND row's separator convention). AVG column highlighted with the same semibold-bright treatment.
+- **Empty / loading states:** "Loading foreign-currency rates…" while the eager mount fetch is in flight, "Rates unavailable" on error.
+- **Eager-warmed:** `+page.svelte` fires a one-shot `$effect` on mount that calls `refreshForex()` regardless of tab, so the sub-panel has rates ready the instant a user taps.
+
+#### VCB Forex tab
+
+- **Dense 6-column grid:** `flag(22px) | code(minmax 2.25rem) | buy(1fr) | sell(1fr) | avg(1fr) | 24h(1fr)`. 10px column gap — matches the Bullion card's rhythm for cross-tab visual continuity.
+- **Flag inset:** flag is 18×18 rounded (circle) inside a 22px col-1 with `justify-content: flex-start` + `padding-inline-start: 4px`. 4px optical nudge (vs 2px mathematical center) lands the round flag visually balanced against the Bullion tab's rectangular ingot at col-1.
+- **Row padding:** `10px var(--rl-space-sm) 10px 0` — 10px vertical gives the 20-row table breathing room; the `--rl-space-sm` inline-end reserves space for the scrollbar gutter so the 24H cell never sits flush.
+- **Scroll container:** `max-height: 19rem`, `overflow-y: auto`, `scrollbar-gutter: stable`, `scrollbar-width: thin`, tuned `scrollbar-color: rgba(255,255,255,0.14) transparent`.
+- **Sticky header:** keeps column labels visible while rows scroll.
+- **Tier dividers:** `border-top: 1px solid var(--rl-color-border-strong)` above rows at `VCB_TIER_DIVIDER_INDICES` (5, 12) — registers the A→B and B→C transitions without a label.
+- **Value hierarchy:** AVG headlined (same bright-bold as Bullion's AVG), BUY/SELL muted.
+- **Flat → `—`** via `formatDelta` (`'unknown'` when snapshots are stale / yesterday missing); `0.00%` reserved for genuine post-publish flat days.
+
+### Unified number formatting
+
+Single tiered-precision ladder in `shared/number-format.ts` — covers fiat, crypto, forex rates:
+
+```
+>= 1000           → 0 decimal places
+100 – 999         → 1 decimal place
+1 – 99            → 2 decimal places
+0.0001 – 0.9999   → 4 decimal places
+< 0.0001          → 8 decimal places
+```
+
+Callers pick the locale (`en-US` for comma-thousands, `vi-VN` for dot-thousands) and prepend any symbol. Formatter instances memoized by `locale:decimals` pair — ≤15 entries in practice.
 
 ## Charts
 
