@@ -7,8 +7,10 @@ import {
 	type CryptoTicker,
 	type CryptoSymbol,
 } from './shared/binance-client'
+import { formatTiered } from './shared/number-format'
 import type { PriceTable, ChartData } from './shared/phuquy-client'
 import type { IndexQuote, StockQuote } from './shared/ssi-iboard-client'
+import { fetchVcbSnapshot, toVcbDateParam, vcbYesterday, type VcbSnapshot } from './shared/vcb-forex-client'
 import { createWatchlist } from './use-watchlist.svelte'
 import { STOCKS_POLL_MS, computeNextPollTime, msUntilNextPoll } from './vn-stock-schedule'
 
@@ -21,6 +23,8 @@ type TickersEvents = {
 	'crypto:fetched': FetchResult
 	'stocks:fetching': void
 	'stocks:fetched': FetchResult
+	'forex:fetching': void
+	'forex:fetched': FetchResult
 	'chart:metals:fetching': void
 	'chart:metals:fetched': FetchResult
 	'chart:crypto:fetching': void
@@ -32,6 +36,9 @@ type TickersEvents = {
 // Polling intervals — how often to fetch fresh data
 const METALS_POLL_MS = 15 * 60 * 1000 // 15 min — Phu Quy prices move slowly
 const CRYPTO_POLL_MS = 5 * 60 * 1000 // 5 min — Binance prices move faster
+const FOREX_POLL_MS = 60 * 60 * 1000 // 60 min — VCB publishes a daily snapshot at 23:00 ICT
+// plus a handful of intraday updates (morning, mid-day, afternoon, end of business). No
+// documented schedule; hourly polling matches the cadence without overwhelming VCB.
 // STOCKS_POLL_MS — imported from vn-stock-schedule. Phase-aware schedule:
 // 5 min during trading; drains until next 09:00 ICT / 21:00 EOD otherwise.
 
@@ -41,6 +48,7 @@ const STOCK_SYMBOL = 'VN100'
 // Freshness thresholds — dot turns amber/red when exceeded
 const METALS_STALE_MS = METALS_POLL_MS // fresh within one poll cycle
 const CRYPTO_STALE_MS = CRYPTO_POLL_MS
+const FOREX_STALE_MS = FOREX_POLL_MS
 
 // Visibility fetch — debounce when tab becomes visible again
 const VISIBILITY_DEBOUNCE_MS = 10 * 1000 // 10s — matches server-side debounce TTL
@@ -86,7 +94,7 @@ export function useTickers(initialData: TickersData) {
 			const res = await fetch('/tickers/api/spots/metals')
 			if (res.ok) {
 				priceTable = await res.json()
-				now = lastMetalsFetchedAt = Date.now()
+				lastMetalsFetchedAt = Date.now()
 				error = null
 				bus.emit('metals:fetched', { ok: true })
 				if (chartAsset === 'gold' || chartAsset === 'silver') autoRefreshChart()
@@ -139,6 +147,45 @@ export function useTickers(initialData: TickersData) {
 		}
 	})
 
+	// Forex (VCB) — +page.svelte kicks off the first fetch on mount. `forexPollActive` gates
+	// the polling effect so the setInterval only starts once data has landed (prevents
+	// polling while cold / on refetch-loop if the first fetch fails).
+	// Yesterday's snapshot only changes at ICT midnight — cached indefinitely and only
+	// refetched when the calendar day rolls over.
+	let forexToday = $state<VcbSnapshot | null>(null)
+	let forexYesterday = $state<VcbSnapshot | null>(null)
+	let lastForexFetchedAt = $state(Date.now())
+	let forexPollActive = $state(false)
+
+	async function fetchForex() {
+		bus.emit('forex:fetching', undefined as void)
+		try {
+			const todayDate = new Date()
+			const yesterdayDate = vcbYesterday(todayDate)
+			const yesterdayKey = toVcbDateParam(yesterdayDate)
+			const needYesterday = !forexYesterday || forexYesterday.date !== yesterdayKey
+			const [todaySnap, yesterdaySnap] = await Promise.all([
+				fetchVcbSnapshot(todayDate),
+				needYesterday ? fetchVcbSnapshot(yesterdayDate) : Promise.resolve(forexYesterday),
+			])
+			forexToday = todaySnap
+			forexYesterday = yesterdaySnap
+			lastForexFetchedAt = Date.now()
+			if (!forexPollActive) forexPollActive = true
+			bus.emit('forex:fetched', { ok: true })
+		} catch (e) {
+			console.error('Forex fetch error:', e)
+			bus.emit('forex:fetched', { ok: false, error: (e as Error).message })
+		}
+	}
+
+	// Poll forex only after first successful fetch — keeps cold tabs from hitting VCB.
+	$effect(() => {
+		if (!browser || !forexPollActive) return
+		const interval = setInterval(fetchForex, FOREX_POLL_MS)
+		return () => clearInterval(interval)
+	})
+
 	let now = $state(Date.now())
 
 	// Fetch all data when tab becomes visible again (debounced)
@@ -152,6 +199,8 @@ export function useTickers(initialData: TickersData) {
 			// Stocks: refetch only once scheduled next-poll time has passed — skip closed days.
 			const nextStocksPoll = computeNextPollTime(new Date(lastStocksFetchedAt)).getTime()
 			if (now >= nextStocksPoll) fetchStocks()
+			// Forex: only revive if user has opened the tab at least once this session.
+			if (forexPollActive && now - lastForexFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchForex()
 		}
 		document.addEventListener('visibilitychange', onVisible)
 		return () => document.removeEventListener('visibilitychange', onVisible)
@@ -187,6 +236,45 @@ export function useTickers(initialData: TickersData) {
 
 	const selectedSilver = $derived(silverItems[selectedSilverIdx] ?? silverItems[0] ?? null)
 
+	// Silver Kg item — the largest-unit row the Bullion card shows. Hoisted so the
+	// `.find()` doesn't run on every +page.svelte render / NOW_TICK tick.
+	const silverKgItem = $derived(silverItems.find((i) => i.unit?.toLowerCase().includes('kg')) ?? null)
+
+	// 24h summary — unit-normalize each metal to the unit shown in its FIRST card row, so
+	// L/H visually align with the price the user glances at first.
+	//
+	// Gold: Phu Quy's 1D chart uses SJC summary prices which come per-LUONG (not per-chi).
+	// Gold card's first row is Chỉ (per-chi), so divide by 10.
+	//
+	// Silver: Phu Quy's chart points come per-CHI (raw). Silver card's first row is Lượng
+	// (per-luong = per-chi × 10), so multiply.
+	const goldDayStats = $derived(
+		priceTable?.dayStats?.gold
+			? {
+					changePercent: priceTable.dayStats.gold.changePercent,
+					low: priceTable.dayStats.gold.low / 10,
+					high: priceTable.dayStats.gold.high / 10,
+				}
+			: null,
+	)
+	const silverDayStats = $derived(
+		priceTable?.dayStats?.silver
+			? {
+					changePercent: priceTable.dayStats.silver.changePercent,
+					low: priceTable.dayStats.silver.low * 10,
+					high: priceTable.dayStats.silver.high * 10,
+				}
+			: null,
+	)
+
+	// VCB USD/VND mid used to approximate Avg (USD) on the gold/silver cards. Intentionally
+	// VCB avg rather than street/chợ đen: VCB's mid is LOWER than the street mid in the
+	// current regime, and a lower VND-per-USD rate gives a LARGER USD equivalent. Showing the
+	// larger USD number is the conservative/pessimistic reference for a retail gold buyer
+	// thinking "how much USD would this cost me" — biased toward overestimation rather than
+	// the optimistic (cheaper) street-rate conversion.
+	const usdVndAvg = $derived(priceTable?.usdVndAvg ?? null)
+
 	// Crypto tickers — SSR-primed; client polls Binance directly every CRYPTO_POLL_MS.
 	let cryptoTickers = $state<CryptoTicker[]>(initialData.crypto ?? [])
 
@@ -204,7 +292,7 @@ export function useTickers(initialData: TickersData) {
 			// Merge fixed symbols with watchlist — dedup in case user added a fixed pair alias
 			const allSymbols = [...new Set([...Object.values(CRYPTO_SYMBOLS), ...watchlist.crypto])]
 			cryptoTickers = await fetchBinanceTickers(allSymbols)
-			now = lastCryptoFetchedAt = Date.now()
+			lastCryptoFetchedAt = Date.now()
 			bus.emit('crypto:fetched', { ok: true })
 			if (chartAsset in CRYPTO_SYMBOLS || watchlist.crypto.includes(chartAsset)) autoRefreshChart()
 		} catch (e) {
@@ -250,7 +338,7 @@ export function useTickers(initialData: TickersData) {
 				stockQuotes = newMap
 			}
 
-			now = lastStocksFetchedAt = Date.now()
+			lastStocksFetchedAt = Date.now()
 			bus.emit('stocks:fetched', { ok: true })
 			if (chartAsset === 'VN100' || watchlist.stocks.includes(chartAsset)) autoRefreshChart()
 		} catch (e) {
@@ -264,6 +352,7 @@ export function useTickers(initialData: TickersData) {
 	const metalsElapsed = $derived(now - lastMetalsFetchedAt)
 	const cryptoElapsed = $derived(now - lastCryptoFetchedAt)
 	const stocksElapsed = $derived(now - lastStocksFetchedAt)
+	const forexElapsed = $derived(now - lastForexFetchedAt)
 
 	$effect(() => {
 		if (!browser) return
@@ -281,7 +370,10 @@ export function useTickers(initialData: TickersData) {
 		error = null
 		chartCache.clear()
 		try {
-			await Promise.all([fetchMetals(), fetchCryptoTickers(), fetchStocks()])
+			// Forex only included once first-fetched (lazy tab) — avoid hitting VCB for users who never open it.
+			const jobs: Promise<unknown>[] = [fetchMetals(), fetchCryptoTickers(), fetchStocks()]
+			if (forexPollActive) jobs.push(fetchForex())
+			await Promise.all(jobs)
 		} finally {
 			refreshing = false
 		}
@@ -491,6 +583,18 @@ export function useTickers(initialData: TickersData) {
 		get selectedSilver() {
 			return selectedSilver
 		},
+		get silverKgItem() {
+			return silverKgItem
+		},
+		get goldDayStats() {
+			return goldDayStats
+		},
+		get silverDayStats() {
+			return silverDayStats
+		},
+		get usdVndAvg() {
+			return usdVndAvg
+		},
 		getCryptoTicker,
 		getCryptoTickerBySymbol,
 		get vn100Quote() {
@@ -512,8 +616,18 @@ export function useTickers(initialData: TickersData) {
 		get stocksElapsed() {
 			return stocksElapsed
 		},
+		get forexElapsed() {
+			return forexElapsed
+		},
+		get forexToday() {
+			return forexToday
+		},
+		get forexYesterday() {
+			return forexYesterday
+		},
 		metalsTtl: METALS_STALE_MS,
 		cryptoTtl: CRYPTO_STALE_MS,
+		forexTtl: FOREX_STALE_MS,
 		get stocksTtl() {
 			// FreshnessDot ratio = elapsed / ttl. During trading ttl ≈ 5 min;
 			// during closed hours ttl stretches to the next scheduled fetch so
@@ -553,6 +667,7 @@ export function useTickers(initialData: TickersData) {
 		refreshMetals: fetchMetals,
 		refreshCrypto: fetchCryptoTickers,
 		refreshStocks: fetchStocks,
+		refreshForex: fetchForex,
 		selectSilver,
 		fetchChart,
 		refreshChart: () => fetchChart(chartAsset, chartDuration, true),
@@ -565,24 +680,36 @@ export function formatVND(value: number): string {
 	return vndFmt.format(value)
 }
 
-export function formatSpread(buy: number, sell: number): string {
-	return formatVND(sell - buy)
+// Gold card uses kVND (1 k = 1,000 VND) to keep the 6-column grid readable at phone widths —
+// "16.875" fits where "16.875.000" crowds the adjacent USD column. Integer-rounded because gold
+// per-chi prices are already at the 10M+ scale; sub-thousand precision is below display noise.
+// Silver card stays on raw VND (its per-luong values fit without the compaction).
+export function formatKVND(value: number): string {
+	return vndFmt.format(Math.round(value / 1000))
 }
 
-const usdFmt0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
-const usdFmt1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-const usdFmt2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const pctSignedFmt = new Intl.NumberFormat('en-US', {
+	minimumFractionDigits: 2,
+	maximumFractionDigits: 2,
+	signDisplay: 'always',
+})
 
-// Tiered decimal precision: < 100 → 2dp, 100–999 → 1dp, >= 1000 → 0dp
-function usdPrecision(value: number) {
-	const abs = Math.abs(value)
-	if (abs >= 1_000) return usdFmt0
-	if (abs >= 100) return usdFmt1
-	return usdFmt2
+// Sign-prefixed percent. Returns "—" when the value rounds to 0.00% — for metal 24h, a flat
+// zero is almost always the "current tick = prior close, no movement yet" state (pre-open,
+// or immediately after a matching trade). Showing "—" is more honest than a confident 0.00%.
+// Differs from VCB's formatDelta on purpose: forex rolls over daily at 23:00 with crisp
+// snapshots, so genuine flat days happen and 0.00% there is real. Metals trade intraday and
+// 0.00% there overwhelmingly means "no reference comparison yet".
+export function formatPctSigned(value: number): string {
+	if (Math.abs(value) < 0.005) return '—'
+	return pctSignedFmt.format(value) + '%'
 }
 
+// USDT (stablecoin-pegged USD) formatters — tiered decimals via the shared convention
+// so a $78,719 price reads cleanly while a $0.42 value keeps two decimals. Compact/Axis
+// variants collapse to K/M suffixes for chart axes where full-precision labels crowd.
 export function formatUSDT(value: number): string {
-	return '$' + usdPrecision(value).format(value)
+	return '$' + formatTiered(value)
 }
 
 export function formatUSDTCompact(value: number): string {
@@ -595,7 +722,7 @@ export function formatUSDTCompact(value: number): string {
 export function formatUSDTAxis(value: number): string {
 	if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
 	if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
-	return usdPrecision(value).format(value)
+	return formatTiered(value)
 }
 
 export const USDT_FORMATTER = {
@@ -616,19 +743,15 @@ export const STOCK_FORMATTER = {
 	formatAxis: formatVN100,
 }
 
-// Adaptive precision for any crypto pair — auto-scales to the value's magnitude.
-// Stablecoins (USDT/USDC/…) use the existing tiered USDT formatter with $ prefix.
-// Non-stablecoin quotes (BTC/ETH/BNB/TRY/EUR/…) show raw numbers without $ prefix.
+// Adaptive precision for any crypto pair. Stablecoin quotes (USDT/USDC/…) route through
+// `formatUSDT` for the $ prefix; everything else renders raw via the shared tiered helper.
+// Same ladder — the ladder's 0.0001 / 8dp floor covers satoshi-scale micro-priced tokens.
 const STABLECOIN_QUOTES = new Set(['USDT', 'USDC', 'FDUSD', 'TUSD', 'BUSD', 'DAI'])
 
 export function formatCryptoPrice(value: number, quote: string): string {
 	if (STABLECOIN_QUOTES.has(quote)) return formatUSDT(value)
-	const abs = Math.abs(value)
-	if (abs === 0) return '0'
-	if (abs >= 1000) return value.toFixed(2)
-	if (abs >= 1) return value.toFixed(4)
-	if (abs >= 0.01) return value.toFixed(6)
-	return value.toFixed(8)
+	if (value === 0) return '0'
+	return formatTiered(value)
 }
 
 export function formatStockPrice(value: number): string {

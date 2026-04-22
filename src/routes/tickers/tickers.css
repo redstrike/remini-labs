@@ -15,6 +15,7 @@
 	--rl-color-asset-eth: #6b7fcc;
 	--rl-color-asset-sol: #8a6db8;
 	--rl-color-asset-vn100: #b87333;
+	--rl-color-asset-forex: #5ba77a; /* desaturated VCB green — distinct from directional up/down */
 
 	/* ─── Directional semantics (Western: green=up, red=down) ─── */
 	--rl-color-up: #2d9f6f;

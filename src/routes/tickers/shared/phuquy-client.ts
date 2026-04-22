@@ -1,3 +1,5 @@
+import { toICTDate } from './ict-date'
+
 const BASE_URL = 'https://be.phuquy.com.vn/jewelry/product-payment-service/api'
 
 const HEADERS = {
@@ -36,6 +38,19 @@ export interface PriceTable {
 	silver: PriceTableItem[]
 	updatedAt: string
 	serverTime: string // ISO 8601 — server clock at response time
+	// 24h stats computed from 1D intraday chart — optional because `fetchPriceTable` alone
+	// returns the spot snapshot only; the spots/metals API composes dayStats on top. Null
+	// per-asset if that metal's chart fetch failed (spot prices still render; UI falls back
+	// to "—" for the missing stats).
+	dayStats?: {
+		gold: DayStats | null
+		silver: DayStats | null
+	}
+	// VCB USD/VND mid-market rate used for the Avg (USD) reference column on metal cards.
+	// Server-cached separately from the table so the rate refreshes on VCB's publishing
+	// cadence (1–3×/day) rather than the 15-min metals poll. null = VCB has been
+	// unreachable AND no stale cached rate is available; UI renders "—" for USD cells.
+	usdVndAvg?: number | null
 }
 
 export interface IntradayPoint {
@@ -62,6 +77,14 @@ export interface ChartData {
 	changeRate: number
 	points: ChartPoint[] // metals: raw intraday points
 	candles?: OHLCCandle[] // crypto: pre-built daily OHLC
+}
+
+// Compact 24h summary for the spot cards — small enough to inline in the PriceTable
+// response. Low/high in per-chi native units (caller converts to per-luong/per-kg for display).
+export interface DayStats {
+	changePercent: number
+	low: number
+	high: number
 }
 
 // --- Upstream API response types (raw from Phu Quy) ---
@@ -253,4 +276,49 @@ export async function fetchChartData(
 			}),
 		),
 	}
+}
+
+// Compute DayStats from a multi-day chart payload. Uses **last-business-day close** as the
+// 24h reference — the last chart point whose ICT calendar date is strictly before today.
+// This matches the standard "24h change" convention in financial UIs (CoinGecko, TradingView)
+// and naturally handles weekends/holidays: reference is simply "the most recent prior close",
+// not "exactly 24h ago".
+//
+// L/H are computed over today's intraday points only (not the 7-day range) — so the column
+// genuinely reflects the day's range, not the week's.
+//
+// Requires a chart with ≥7 days of history (1D chart won't work — it lacks yesterday's close).
+// Returns null when the chart has no reference point (first-ever trading day, empty data).
+//
+// Phu Quy timestamps are ICT-local (no TZ suffix), so `slice(0, 10)` extracts the ICT date
+// directly — no Date parsing + reformatting needed.
+export function computeDayStats(chart: ChartData | null, nowDate: Date = new Date()): DayStats | null {
+	if (!chart || chart.points.length === 0) return null
+	const todayICT = toICTDate(nowDate)
+	const todayPoints: ChartPoint[] = []
+	let reference: ChartPoint | null = null
+	for (const p of chart.points) {
+		const pointDate = p.timestamp.slice(0, 10)
+		if (pointDate === todayICT) {
+			todayPoints.push(p)
+		} else if (pointDate < todayICT) {
+			// Points arrive chronologically — last historical point = most recent prior close.
+			reference = p
+		}
+	}
+	if (!reference) return null
+
+	const current = todayPoints.length > 0 ? todayPoints[todayPoints.length - 1] : reference
+	const changePercent =
+		reference.sellPrice !== 0 ? ((current.sellPrice - reference.sellPrice) / reference.sellPrice) * 100 : 0
+
+	// L/H over today's points; if today has no points yet (pre-open), pin to current (= reference).
+	const sample = todayPoints.length > 0 ? todayPoints : [current]
+	let low = sample[0].sellPrice
+	let high = low
+	for (const p of sample) {
+		if (p.sellPrice < low) low = p.sellPrice
+		if (p.sellPrice > high) high = p.sellPrice
+	}
+	return { changePercent, low, high }
 }

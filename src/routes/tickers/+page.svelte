@@ -2,7 +2,8 @@
 	import {
 		useTickers,
 		formatVND,
-		formatSpread,
+		formatKVND,
+		formatPctSigned,
 		formatUSDT,
 		formatVN100,
 		formatCryptoPrice,
@@ -13,8 +14,19 @@
 	import { Skeleton } from '$lib/components/shadcn-svelte/skeleton/index.js'
 	import { LoadingOverlay } from '$lib/components/remini-labs/loading-overlay/index.js'
 	import { FreshnessDot } from '$lib/components/remini-labs/freshness-dot/index.js'
-	import { RefreshCw as SpinnerIcon, TriangleAlert } from '@lucide/svelte'
+	import { RefreshCw as SpinnerIcon, TriangleAlert, ChevronDown } from '@lucide/svelte'
 	import { formatCryptoDisplay, splitCryptoSymbol } from './shared/binance-client'
+	import {
+		VCB_CURRENCY_ORDER,
+		VCB_TIER_DIVIDER_INDICES,
+		flagUrl,
+		formatForexPrice,
+		formatDelta,
+		formatForeign,
+		computeDelta24h,
+		type VcbCurrencyCode,
+	} from './shared/vcb-forex-client'
+	import { metalIconUrl } from './shared/metal-icons'
 	import PriceChart, { type CandleSize } from './price-chart.svelte'
 	import TickerTabInput from './ticker-tab-input.svelte'
 	import { page } from '$app/state'
@@ -49,6 +61,7 @@
 	const METALS_SPIN_MS = 500 // Phu Quy avg ~400ms
 	const CRYPTO_SPIN_MS = 200 // Binance avg ~120ms
 	const STOCKS_SPIN_MS = 400 // VNDirect avg ~300ms
+	const FOREX_SPIN_MS = 450 // VCB avg ~300–400ms
 
 	const CRYPTO = [
 		{ id: 'BTC' as const, name: 'Bitcoin', accent: '#e8993a' },
@@ -80,7 +93,7 @@
 		{ label: '1W', value: '1W' },
 	]
 	let candleSize = $state<CandleSize>('1D')
-	let metalTab = $state<'gold' | 'silver'>('gold')
+	let metalTab = $state<'metals' | 'forex'>('metals')
 	// Tab IDs are strings: fixed symbols ('BTC', 'ETH', 'SOL', 'VN100'), watchlist symbols
 	// ('ETHUSDT', 'FPT'…), or placeholder pseudo-IDs ('p:1', 'p:2'). Chrome-tab UX — clicking +
 	// creates a new placeholder tab in-line, becomes active immediately.
@@ -202,6 +215,7 @@
 	let fetchingMetals = $state(false)
 	let fetchingCrypto = $state(false)
 	let fetchingStocks = $state(false)
+	let fetchingForex = $state(false)
 	let fetchingMetalsChart = $state(false)
 	let fetchingCryptoChart = $state(false)
 	let fetchingStocksChart = $state(false)
@@ -217,6 +231,8 @@
 			tickers.bus.on('crypto:fetched', () => (fetchingCrypto = false)),
 			tickers.bus.on('stocks:fetching', () => (fetchingStocks = true)),
 			tickers.bus.on('stocks:fetched', () => (fetchingStocks = false)),
+			tickers.bus.on('forex:fetching', () => (fetchingForex = true)),
+			tickers.bus.on('forex:fetched', () => (fetchingForex = false)),
 			tickers.bus.on('chart:metals:fetching', () => (fetchingMetalsChart = true)),
 			tickers.bus.on('chart:metals:fetched', () => (fetchingMetalsChart = false)),
 			tickers.bus.on('chart:crypto:fetching', () => (fetchingCryptoChart = true)),
@@ -225,6 +241,51 @@
 			tickers.bus.on('chart:stocks:fetched', () => (fetchingStocksChart = false)),
 		]
 		return () => unsubs.forEach((fn) => fn())
+	})
+
+	// Eager-fetch VCB forex on mount so the Bullion expand-on-tap has foreign-currency
+	// rates ready the moment the user taps a metal row. Guarded by a one-shot flag so a
+	// failed fetch doesn't retrigger on every `fetchingForex` flip — after the first
+	// success, the 10-min poll inside use-tickers takes over.
+	let forexEagerFired = false
+	$effect(() => {
+		if (forexEagerFired || tickers.forexToday || fetchingForex) return
+		forexEagerFired = true
+		tickers.refreshForex()
+	})
+
+	// Bullion expand-on-tap — tapping a metal row reveals its Buy/Sell in every VCB
+	// currency. Exclusive (one row at a time) so the card stays compact; tap the same
+	// row again to collapse, tap a different row to switch.
+	let expandedBullion = $state<'gold' | 'silver' | null>(null)
+	function toggleBullionExpand(metal: 'gold' | 'silver') {
+		expandedBullion = expandedBullion === metal ? null : metal
+	}
+
+	// Rows in VCB_CURRENCY_ORDER-order, enriched with today/yesterday rates + Δ%.
+	// Null entries kept so the row layout stays stable while partial data streams in.
+	//
+	// Stale-snapshot detection: VCB publishes one snapshot per business day (~23:00 ICT) and
+	// silently rolls unpublished future dates forward to the latest snapshot. During overnight /
+	// pre-business hours, `?date=today` and `?date=yesterday` both return the same underlying
+	// snapshot with identical `UpdatedDate`. Computing a delta against ourselves would yield a
+	// misleading 0.00% across all rows — so when updatedAt matches, treat yesterday as unknown
+	// and display "—" (null delta → formatDelta's 'unknown' sign).
+	const forexRows = $derived.by(() => {
+		const today = tickers.forexToday
+		const yesterday = tickers.forexYesterday
+		const snapshotsStale = !!today && !!yesterday && today.updatedAt === yesterday.updatedAt
+		return VCB_CURRENCY_ORDER.map((code: VcbCurrencyCode) => {
+			const t = today?.rates.get(code)
+			const y = snapshotsStale ? undefined : yesterday?.rates.get(code)
+			return {
+				code,
+				buy: t?.buy ?? null,
+				sell: t?.sell ?? null,
+				avg: t?.avg ?? null,
+				delta: t ? computeDelta24h(t, y) : null,
+			}
+		})
 	})
 </script>
 
@@ -259,86 +320,238 @@
 	{:else}
 		<!-- Price Cards: side-by-side on tablet+ -->
 		<div class="tickers-cards">
-			<!-- Metals Card (Gold / Silver tabs) -->
+			<!-- ─── Bullion Card — tabs [Bullion] [VCB Forex]. One row per metal (SJC gold
+			     Lượng, PQ silver Kg). 5-col grid: asset(icon + label) · buy · sell · 24h ·
+			     chevron. Tap a row to expand a scrollable sub-panel showing Buy/Sell in every
+			     VCB currency — progressive disclosure for foreign visitors who want a quick
+			     reference in their own currency. The sub-panel mirrors VCB Forex's thin
+			     scrollbar + 14rem max-height pattern so the card can't tower over the rest
+			     of the page. To add a third metal (platinum, palladium), drop in another row
+			     snippet and render it here. ─── -->
+			{#snippet bullionSubPanel(vndBuy: number, vndSell: number, panelId: string)}
+				{@const vndAvg = (vndBuy + vndSell) / 2}
+				<div class="tickers-bullion-sub-panel" id={panelId} role="region">
+					{#if tickers.forexToday}
+						{#each VCB_CURRENCY_ORDER as code (code)}
+							{@const rate = tickers.forexToday.rates.get(code)}
+							{#if rate?.avg}
+								<div class="tickers-bullion-sub-row">
+									<span class="tickers-bullion-sub-asset">
+										<img src={flagUrl(code)} alt="" width="18" height="12" loading="lazy" />
+										<span class="tickers-bullion-sub-code">{code}</span>
+									</span>
+									<span class="tickers-bullion-sub-value">
+										{formatForeign(vndBuy, rate.avg)}
+									</span>
+									<span class="tickers-bullion-sub-value">
+										{formatForeign(vndSell, rate.avg)}
+									</span>
+									<span class="tickers-bullion-sub-value tickers-bullion-sub-avg">
+										{formatForeign(vndAvg, rate.avg)}
+									</span>
+									<span></span>
+								</div>
+							{/if}
+						{/each}
+					{:else if fetchingForex}
+						<div class="tickers-bullion-sub-empty">Loading foreign-currency rates…</div>
+					{:else}
+						<div class="tickers-bullion-sub-empty">Rates unavailable — tap VCB Forex to retry.</div>
+					{/if}
+				</div>
+			{/snippet}
+
+			{#snippet goldRow()}
+				{@const stats = tickers.goldDayStats}
+				{@const up = stats ? stats.changePercent > 0 : false}
+				{@const down = stats ? stats.changePercent < 0 : false}
+				{@const pct = stats ? formatPctSigned(stats.changePercent) : '—'}
+				{@const isExpanded = expandedBullion === 'gold'}
+				{#if tickers.goldItem}
+					{@const avg = (tickers.goldItem.buyLuong + tickers.goldItem.sellLuong) / 2}
+					<button
+						type="button"
+						class="tickers-metal-row"
+						class:expanded={isExpanded}
+						title="SJC — 999.9 vàng miếng · giá per Lượng · tap for foreign-currency prices"
+						aria-expanded={isExpanded}
+						aria-controls="bullion-sub-gold"
+						onclick={() => toggleBullionExpand('gold')}>
+						<span class="tickers-metal-flag">
+							<img src={metalIconUrl('gold')} alt="SJC gold" width="22" height="22" />
+						</span>
+						<span class="tickers-metal-label">Gold</span>
+						<span class="tickers-metal-value">{formatKVND(tickers.goldItem.buyLuong)}</span>
+						<span class="tickers-metal-value">{formatKVND(tickers.goldItem.sellLuong)}</span>
+						<span class="tickers-metal-value tickers-metal-avg">{formatKVND(avg)}</span>
+						<span class="tickers-metal-day-cell" class:up class:down>
+							{pct}
+							<span class="tickers-metal-chevron" aria-hidden="true">
+								<ChevronDown size={14} />
+							</span>
+						</span>
+					</button>
+					{#if isExpanded}
+						{@render bullionSubPanel(
+							tickers.goldItem.buyLuong,
+							tickers.goldItem.sellLuong,
+							'bullion-sub-gold',
+						)}
+					{/if}
+				{/if}
+			{/snippet}
+
+			{#snippet silverRow()}
+				{@const stats = tickers.silverDayStats}
+				{@const up = stats ? stats.changePercent > 0 : false}
+				{@const down = stats ? stats.changePercent < 0 : false}
+				{@const pct = stats ? formatPctSigned(stats.changePercent) : '—'}
+				{@const isExpanded = expandedBullion === 'silver'}
+				<!-- Show only the Kg row (largest unit). PQ publishes Lượng + Kg; we pick Kg. -->
+				{@const kgItem = tickers.silverKgItem}
+				{#if kgItem}
+					{@const avg = (kgItem.buyPrice + kgItem.sellPrice) / 2}
+					<button
+						type="button"
+						class="tickers-metal-row"
+						class:expanded={isExpanded}
+						title="Phú Quý — 999 silver ingot · giá per Kg · tap for foreign-currency prices"
+						aria-expanded={isExpanded}
+						aria-controls="bullion-sub-silver"
+						onclick={() => toggleBullionExpand('silver')}>
+						<span class="tickers-metal-flag">
+							<img src={metalIconUrl('silver')} alt="PQ silver" width="22" height="22" />
+						</span>
+						<span class="tickers-metal-label">Silver</span>
+						<span class="tickers-metal-value">{formatKVND(kgItem.buyPrice)}</span>
+						<span class="tickers-metal-value">{formatKVND(kgItem.sellPrice)}</span>
+						<span class="tickers-metal-value tickers-metal-avg">{formatKVND(avg)}</span>
+						<span class="tickers-metal-day-cell" class:up class:down>
+							{pct}
+							<span class="tickers-metal-chevron" aria-hidden="true">
+								<ChevronDown size={14} />
+							</span>
+						</span>
+					</button>
+					{#if isExpanded}
+						{@render bullionSubPanel(kgItem.buyPrice, kgItem.sellPrice, 'bullion-sub-silver')}
+					{/if}
+				{/if}
+			{/snippet}
+
 			<div class="tickers-card">
 				<div class="tickers-card-header">
 					<div class="tickers-card-tabs" onwheel={horizontalWheel}>
 						<button
 							class="tickers-card-tab"
-							class:active-gold={metalTab === 'gold'}
-							onclick={() => (metalTab = 'gold')}>
-							SJC Gold
+							class:active-metals={metalTab === 'metals'}
+							onclick={() => (metalTab = 'metals')}>
+							Bullion
 						</button>
 						<button
 							class="tickers-card-tab"
-							class:active-silver={metalTab === 'silver'}
-							onclick={() => (metalTab = 'silver')}>
-							PQ Silver
+							class:active-forex={metalTab === 'forex'}
+							onclick={() => (metalTab = 'forex')}>
+							VCB Forex
 						</button>
 					</div>
 					<div class="tickers-card-status">
-						<FreshnessDot elapsed={tickers.metalsElapsed} ttl={tickers.metalsTtl} />
-						<button
-							class="tickers-card-refresh"
-							onclick={() => tickers.refreshMetals()}
-							disabled={fetchingMetals}
-							title="Refresh metals">
-							<SpinnerIcon
-								size={10}
-								class={fetchingMetals ? 'tickers-spinner' : ''}
-								style={fetchingMetals ? `animation-duration: ${METALS_SPIN_MS}ms` : ''} />
-						</button>
+						{#if metalTab === 'forex'}
+							<FreshnessDot elapsed={tickers.forexElapsed} ttl={tickers.forexTtl} />
+							<button
+								class="tickers-card-refresh"
+								onclick={() => tickers.refreshForex()}
+								disabled={fetchingForex}
+								title="Refresh forex">
+								<SpinnerIcon
+									size={10}
+									class={fetchingForex ? 'tickers-spinner' : ''}
+									style={fetchingForex ? `animation-duration: ${FOREX_SPIN_MS}ms` : ''} />
+							</button>
+						{:else}
+							<FreshnessDot elapsed={tickers.metalsElapsed} ttl={tickers.metalsTtl} />
+							<button
+								class="tickers-card-refresh"
+								onclick={() => tickers.refreshMetals()}
+								disabled={fetchingMetals}
+								title="Refresh metals">
+								<SpinnerIcon
+									size={10}
+									class={fetchingMetals ? 'tickers-spinner' : ''}
+									style={fetchingMetals ? `animation-duration: ${METALS_SPIN_MS}ms` : ''} />
+							</button>
+						{/if}
 					</div>
 				</div>
 
-				{#if metalTab === 'gold' && tickers.goldItem}
-					<div class="tickers-metal-table">
+				{#if metalTab === 'metals'}
+					<div class="tickers-metal-groups">
 						<div class="tickers-metal-header">
+							<span></span>
 							<span></span>
 							<span class="tickers-metal-col-label">Buy</span>
 							<span class="tickers-metal-col-label">Sell</span>
+							<span class="tickers-metal-col-label">Avg</span>
+							<span class="tickers-metal-col-label">24H</span>
 						</div>
-						<div class="tickers-metal-row">
-							<span class="tickers-metal-unit">Chỉ (VND)</span>
-							<span class="tickers-metal-value">{formatVND(tickers.goldItem.buyChi)}</span>
-							<span class="tickers-metal-value">{formatVND(tickers.goldItem.sellChi)}</span>
-						</div>
-						<div class="tickers-metal-row">
-							<span class="tickers-metal-unit">Lượng (VND)</span>
-							<span class="tickers-metal-value">{formatVND(tickers.goldItem.buyLuong)}</span>
-							<span class="tickers-metal-value">{formatVND(tickers.goldItem.sellLuong)}</span>
-						</div>
+						{@render goldRow()}
+						{@render silverRow()}
 					</div>
-					<div class="tickers-spread-row">
-						<span class="tickers-spread-label">Spread</span>
-						<span class="tickers-spread-value">
-							{formatSpread(tickers.goldItem.buyChi, tickers.goldItem.sellChi)} / {formatSpread(
-								tickers.goldItem.buyLuong,
-								tickers.goldItem.sellLuong,
-							)}
-						</span>
-					</div>
-				{:else if metalTab === 'silver' && tickers.silverItems.length}
-					<div class="tickers-metal-table">
-						<div class="tickers-metal-header">
-							<span></span>
-							<span class="tickers-metal-col-label">Buy</span>
-							<span class="tickers-metal-col-label">Sell</span>
-						</div>
-						{#each tickers.silverItems as item}
-							<div class="tickers-metal-row">
-								<span class="tickers-metal-unit"
-									>{item.unit?.includes('kg') ? 'Kg' : 'Lượng'} (VND)</span>
-								<span class="tickers-metal-value">{formatVND(item.buyPrice)}</span>
-								<span class="tickers-metal-value">{formatVND(item.sellPrice)}</span>
+					<div class="tickers-metal-footer-note">Gold per Lượng · Silver per Kg · 1 kVND = 1,000 VND</div>
+				{:else if metalTab === 'forex'}
+					<div class="tickers-forex">
+						{#if !tickers.forexToday && fetchingForex}
+							<div class="tickers-forex-loading">
+								<Skeleton class="mb-2 h-6 w-full" />
+								<Skeleton class="mb-2 h-6 w-full" />
+								<Skeleton class="mb-2 h-6 w-full" />
+								<Skeleton class="mb-2 h-6 w-full" />
+								<Skeleton class="h-6 w-full" />
 							</div>
-						{/each}
-					</div>
-					<div class="tickers-spread-row">
-						<span class="tickers-spread-label">Spread</span>
-						<span class="tickers-spread-value">
-							{tickers.silverItems.map((item) => formatSpread(item.buyPrice, item.sellPrice)).join(' / ')}
-						</span>
+						{:else if !tickers.forexToday}
+							<div class="tickers-forex-empty">Tap refresh to load rates.</div>
+						{:else}
+							<div class="tickers-forex-table" role="table" aria-label="VCB exchange rates (VND)">
+								<div class="tickers-forex-header" role="row">
+									<span aria-hidden="true"></span>
+									<span aria-hidden="true"></span>
+									<span role="columnheader" class="tickers-forex-col-num">Buy</span>
+									<span role="columnheader" class="tickers-forex-col-num">Sell</span>
+									<span role="columnheader" class="tickers-forex-col-num">Avg</span>
+									<span role="columnheader" class="tickers-forex-col-num">24h</span>
+								</div>
+								{#each forexRows as row, i (row.code)}
+									{@const d = formatDelta(row.delta)}
+									<div
+										class="tickers-forex-row"
+										class:tickers-forex-tier-divider={VCB_TIER_DIVIDER_INDICES.includes(i)}
+										role="row">
+										<span class="tickers-forex-flag" aria-hidden="true">
+											<img src={flagUrl(row.code)} alt="" width="18" height="18" loading="lazy" />
+										</span>
+										<span class="tickers-forex-code" role="cell">{row.code}</span>
+										<span class="tickers-forex-num" role="cell">
+											{row.buy !== null ? formatForexPrice(row.buy) : '—'}
+										</span>
+										<span class="tickers-forex-num" role="cell">
+											{row.sell !== null ? formatForexPrice(row.sell) : '—'}
+										</span>
+										<span class="tickers-forex-num tickers-forex-avg" role="cell">
+											{row.avg !== null ? formatForexPrice(row.avg) : '—'}
+										</span>
+										<span
+											class="tickers-forex-num tickers-forex-delta"
+											class:up={d.sign === 'up'}
+											class:down={d.sign === 'down'}
+											class:flat={d.sign === 'flat'}
+											class:unknown={d.sign === 'unknown'}
+											role="cell">
+											{d.text}
+										</span>
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -759,12 +972,17 @@
 		animation: spin 1s linear infinite;
 	}
 
-	/* Cards grid: stack on mobile, side-by-side on tablet+ */
+	/* Cards grid: stack on mobile, side-by-side on tablet+.
+	   align-items:start so each card sizes to its own content. Default stretch behavior coupled
+	   row-sibling heights — expanding the forex tab's ~19rem table forced the crypto card to
+	   match, breaking the standalone-card feel. min-height on .tickers-card still floors any
+	   body that would otherwise collapse below the header band (new-tab placeholder state). */
 	.tickers-cards {
 		display: grid;
 		grid-template-columns: 1fr;
 		gap: var(--rl-space-md);
 		margin-bottom: var(--rl-space-lg);
+		align-items: start;
 	}
 	@media (min-width: 640px) {
 		.tickers-cards {
@@ -884,6 +1102,15 @@
 	.tickers-card-tab:hover {
 		color: var(--rl-color-text-subtle);
 	}
+	/* Metals tab — active color reuses --rl-color-asset-gold. Gold is the primary precious
+	   metal in VN retail so the combined "Metals" tab borrows the gold accent; silver is
+	   a minor secondary and its palette is only used in Option A (below). */
+	.tickers-card-tab.active-metals {
+		color: var(--rl-color-asset-gold);
+		border-bottom-color: var(--rl-color-asset-gold);
+	}
+	/* Option A prep — uncomment these + split the "Metals" button into Gold/Silver to
+	   expose both metals as standalone tabs (see the snippet-switch guide in the template).
 	.tickers-card-tab.active-gold {
 		color: var(--rl-color-asset-gold);
 		border-bottom-color: var(--rl-color-asset-gold);
@@ -891,6 +1118,11 @@
 	.tickers-card-tab.active-silver {
 		color: var(--rl-color-asset-silver);
 		border-bottom-color: var(--rl-color-asset-silver);
+	}
+	*/
+	.tickers-card-tab.active-forex {
+		color: var(--rl-color-asset-forex);
+		border-bottom-color: var(--rl-color-asset-forex);
 	}
 	.tickers-card-tab.active-crypto {
 		color: var(--crypto-accent);
@@ -1003,18 +1235,106 @@
 	/* Filled-tab body stub — minimal, just enough to confirm the tab→body link works. Step 4 swaps it for real spot data. */
 	/* Old stub styles removed — watchlist tabs now render real price data. */
 
-	/* Metal prices — compact table: unit | buy | sell */
-	.tickers-metal-table {
+	/* Bullion table — 6-col structure. Tracks:
+
+	      flag (18px) · label (3rem) · buy (4.5rem) · sell (4.5rem) · avg (4.5rem) · 24h (3.5rem)
+
+	   ALL tracks are FIXED widths — no `1fr` and no `auto`. This is deliberate: sub-row
+	   foreign-currency values like JPY/KRW "1.022.741" are wider than main row VND values
+	   like "168.750", and `1fr` with subgrid auto-sizing would let sub-row content push
+	   Buy/Sell/Avg tracks wider than main row needs, visibly jumping BUY header position
+	   on toggle. Fixed tracks = tracks sized for the widest expected content in either
+	   context = no jump, ever.
+
+	   The chevron indicator now lives INSIDE the 24H cell (right after the `%` value) so
+	   there's no dedicated chevron column stealing horizontal space past the 24H value.
+	   The 24H column now runs all the way to the card's inner right edge, matching the
+	   right-alignment rhythm of the other price columns.
+
+	   4.5rem (72px) price cols accommodate the widest sub-row content after we switch the
+	   sub-panel to vi-VN locale (dot-thousands): "9.537.167" KRW ≈ 63px fits with padding.
+	   Avg is included because the VN bullion market has a real mid: street/OTC/P2P trades
+	   happen at prices between the posted Buy and Sell, so mid is actionable, not
+	   theoretical. */
+	.tickers-metal-groups {
 		display: grid;
-		grid-template-columns: auto 1fr 1fr;
-		gap: var(--rl-space-xs) 12px;
-		padding: var(--rl-space-sm) 0;
+		/* Numeric columns are `1fr` (proportional) — defined tracks, so subgrid sub-rows
+		   cannot push them wider no matter how long a value like "9.396.914" (KRW) gets.
+		   That keeps BUY/SELL/AVG/24H pinned while expanding/collapsing the sub-forex
+		   panel, and the grid naturally fills the card width so the 24H column anchors
+		   to the card's right edge at every viewport (phone, 2-col tablet, desktop). */
+		grid-template-columns: 22px 3rem 1fr 1fr 1fr 1fr;
+		column-gap: 10px;
+		row-gap: var(--rl-space-xs);
+		padding: var(--rl-space-sm) 0 0;
+	}
+	/* Header, data rows, AND sub-rows are each their own subgrid inheriting the parent's
+	   6 tracks. Subgrid preserves column alignment automatically — main row "Gold 167.500"
+	   lines up with sub row "USD 6,383.38" in the same Buy column, etc. */
+	.tickers-metal-header,
+	.tickers-metal-row {
+		display: grid;
+		grid-column: 1 / -1;
+		grid-template-columns: subgrid;
+		align-items: center;
+	}
+	/* Row is a <button> for a11y (native keyboard + aria-expanded). Reset browser chrome so
+	   it inherits the card's typography and spacing; keep the pointer cursor + hover/focus
+	   affordances. `text-align: inherit` lets child spans keep their per-cell alignment. */
+	button.tickers-metal-row {
+		appearance: none;
+		background: transparent;
+		border: 0;
+		color: inherit;
+		font: inherit;
+		text-align: inherit;
+		width: 100%;
+		cursor: pointer;
+		padding: 6px 0;
+		border-radius: var(--rl-radius-sm);
+		transition: background var(--rl-duration-micro) var(--rl-ease-move);
+	}
+	button.tickers-metal-row:hover {
+		background: rgba(255, 255, 255, 0.03);
+	}
+	button.tickers-metal-row:focus-visible {
+		outline: 2px solid var(--rl-color-border-strong);
+		outline-offset: -2px;
+	}
+	/* Flag cell — ingot icon occupying the 18px fixed-width leading column. Same column
+	   position the VCB Forex flag column claims, so when the sub-panel renders country
+	   flags below, they line up in the same track. Source attribution (SJC / Phú Quý)
+	   lives on the row's `title` tooltip instead of stealing horizontal space on mobile. */
+	.tickers-metal-flag {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.tickers-metal-flag img {
+		display: block;
+		width: 22px;
+		height: 22px;
+	}
+	.tickers-metal-label {
+		font-size: var(--rl-text-xs);
+		font-weight: var(--rl-font-semibold);
+		color: var(--rl-color-text);
+		letter-spacing: 0.2px;
 	}
 	.tickers-metal-header {
-		display: contents;
+		padding: var(--rl-space-xs) 0;
+		border-bottom: 1px solid var(--rl-color-border);
+		/* Matches .tickers-forex-header — header stays at --rl-color-surface while the card
+		   lifts to --rl-color-surface-raised on hover, producing a subtle band that makes the
+		   header pop from the data rows. Same token choice as forex for visual consistency. */
+		background: var(--rl-color-surface);
 	}
-	.tickers-metal-row {
-		display: contents;
+	/* Pull the last column's right-aligned text in from the card edge — matches VCB Forex's
+	   `padding-inline-end: var(--rl-space-sm)` treatment on its header+row containers so the
+	   rightmost cell doesn't bump the right edge. */
+	.tickers-metal-header > :last-child,
+	button.tickers-metal-row > :last-child {
+		padding-inline-end: var(--rl-space-sm);
 	}
 	.tickers-metal-col-label {
 		font-size: var(--rl-text-2xs);
@@ -1024,21 +1344,270 @@
 		letter-spacing: 0.5px;
 		text-align: right;
 	}
-	.tickers-metal-unit {
+	.tickers-metal-value {
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-sm);
+		font-weight: var(--rl-font-medium);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.3px;
+		color: var(--rl-color-text-subtle);
+		text-align: right;
+	}
+	/* Avg (mid-market) is the headline — promoted to match VCB Forex's .tickers-forex-avg
+	   treatment. Buy/Sell stay muted as reference points; the midpoint is what the user
+	   glances at first when "what's the market price today?" is the question. The street /
+	   P2P bullion market genuinely trades around mid, so the highlight encodes a real
+	   reference, not a theoretical one. */
+	.tickers-metal-avg {
+		color: var(--rl-color-text);
+		font-weight: var(--rl-font-semibold);
+	}
+	/* Chevron — tiny visual hint that the row expands. Lives INSIDE the 24H day cell
+	   (not a dedicated column), sitting to the right of the `%` value with a small gap.
+	   Rotates 180° when the row's `.expanded` class is active. aria-expanded on the row
+	   carries the a11y state; class:expanded drives only the rotation. */
+	.tickers-metal-chevron {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin-inline-start: var(--rl-space-2xs);
+		color: var(--rl-color-text-faint);
+		transition: transform var(--rl-duration-micro) var(--rl-ease-move);
+	}
+	button.tickers-metal-row.expanded .tickers-metal-chevron {
+		transform: rotate(180deg);
+	}
+	/* Foreign-currency sub-panel — appears when a metal row is tapped. Spans all 6 parent
+	   columns via `grid-column: 1 / -1` AND subgrids to the parent tracks, so sub-row cells
+	   land in the exact same columns as the main row above: USD's buy sits under BUY, its
+	   sell under SELL, etc. Empty spans in the 24h + chevron slots hold the final two
+	   columns open so the subgrid stays aligned.
+
+	   No layout jump: the parent grid's buy/sell tracks are 1fr (proportional, not
+	   content-sized), so the sub-panel's long values like "1,022,741" can't push those
+	   columns wider. `auto` tracks (label, 24h) are only fed by main rows since sub-rows
+	   leave them empty. Scrollbar styling mirrors VCB Forex exactly. */
+	.tickers-bullion-sub-panel {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: subgrid;
+		max-height: 14rem;
+		overflow-y: auto;
+		scrollbar-gutter: stable;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+		margin-top: 2px;
+		padding: var(--rl-space-xs) 0 0;
+		border-top: 1px solid rgba(255, 255, 255, 0.05);
+	}
+	.tickers-bullion-sub-row {
+		display: grid;
+		grid-column: 1 / -1;
+		grid-template-columns: subgrid;
+		align-items: center;
+		padding: 4px 0;
+	}
+	.tickers-bullion-sub-row > :last-child {
+		padding-inline-end: var(--rl-space-sm);
+	}
+	/* Asset cell — spans the parent's col 1 (ingot) + col 2 (label) and centers the
+	   flag+code pair across the combined span. Visually the flag lands right around the
+	   col 1/col 2 boundary — between the parent's ingot icon and "Gold"/"Silver" label —
+	   which reads as a nested child hanging under its parent's identity slot rather than
+	   a competing label. */
+	.tickers-bullion-sub-asset {
+		grid-column: 1 / 3;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--rl-space-2xs);
+	}
+	.tickers-bullion-sub-asset img {
+		display: block;
+		width: 18px;
+		height: 12px;
+		border-radius: 1px;
+	}
+	.tickers-bullion-sub-code {
+		font-family: var(--rl-font-mono);
 		font-size: var(--rl-text-2xs);
 		font-weight: var(--rl-font-medium);
 		color: var(--rl-color-text-subtle);
-		align-self: center;
+		letter-spacing: 0.3px;
 	}
-	.tickers-metal-value {
+	.tickers-bullion-sub-value {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-md);
-		font-weight: var(--rl-font-bold);
+		font-size: var(--rl-text-xs);
 		font-variant-numeric: tabular-nums;
-		letter-spacing: -0.3px;
+		letter-spacing: -0.2px;
+		color: var(--rl-color-text-subtle);
+		text-align: right;
+		white-space: nowrap;
+	}
+	/* Sub-row Avg mirrors the main row's Avg highlight — one bright reference value per
+	   row at the sub-table level too, so the eye has a focal anchor when scanning 20
+	   currencies' worth of mid-market equivalents. */
+	.tickers-bullion-sub-avg {
 		color: var(--rl-color-text);
+		font-weight: var(--rl-font-semibold);
+	}
+	.tickers-bullion-sub-empty {
+		grid-column: 1 / -1;
+		text-align: center;
+		color: var(--rl-color-text-faint);
+		font-size: var(--rl-text-xs);
+		padding: var(--rl-space-sm) 0;
+	}
+	/* Footer note on the Bullion card — explains the kVND unit in the smallest available
+	   text size. Column headers drop "(VND)" to save horizontal space; this note carries the
+	   unit definition once and anchors to the card's bottom-right corner so it reads as a
+	   persistent legend rather than a floating annotation.
+
+	   Anchoring via flex-column on the card + `margin-top: auto` on the footnote pushes it
+	   to the bottom when the card's `min-height: 215px` exceeds content height (common now
+	   that the table compacts to 2 rows). Scoped via `:has()` so only the card containing
+	   this footnote flips to flex-column; other cards (crypto, stocks) keep block layout. */
+	.tickers-card:has(.tickers-metal-footer-note) {
+		display: flex;
+		flex-direction: column;
+	}
+	.tickers-metal-footer-note {
+		margin-top: auto;
+		font-size: var(--rl-text-2xs);
+		color: var(--rl-color-text-faint);
+		padding-top: var(--rl-space-xs);
+		letter-spacing: 0.3px;
 		text-align: right;
 	}
+
+	/* ─── VCB Forex table ─────────────────────────────────────────────────
+	   Dense 6-column table: flag · code · buy · sell · avg · 24h.
+	   Tier A (top 5) is separated from B+C by a hairline divider; the full
+	   table scrolls natively when overflow exceeds the card height. */
+	.tickers-forex {
+		padding: var(--rl-space-sm) 0 0;
+	}
+	.tickers-forex-loading {
+		padding: var(--rl-space-sm) 0;
+	}
+	.tickers-forex-empty {
+		padding: var(--rl-space-md) 0;
+		color: var(--rl-color-text-faint);
+		font-size: var(--rl-text-xs);
+		text-align: center;
+	}
+	/* Single scroll container: header (sticky) + rows share the same grid so the
+	   scrollbar-gutter reservation keeps header columns aligned with row cells
+	   regardless of whether the scrollbar is actually rendered. */
+	.tickers-forex-table {
+		display: flex;
+		flex-direction: column;
+		max-height: 19rem;
+		overflow-y: auto;
+		scrollbar-gutter: stable;
+		scrollbar-width: thin;
+		/* Subtle translucent thumb on transparent track — the default light-gray rail pulled the
+		   eye more than the data itself, especially against the card's dark surface. */
+		scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+	}
+	/* 6-col grid: flag | code | buy | sell | avg | 24h. Matches Bullion's rhythm — all four
+	   numeric columns are 1fr (buy/sell/avg/24h balanced evenly) and column-gap is 10px
+	   (= Bullion), which also tightens flag↔code into a visual pair instead of floating. */
+	.tickers-forex-header,
+	.tickers-forex-row {
+		display: grid;
+		/* Col 1 is 22px (= Bullion ingot column) with the 18px flag centered inside —
+		   a 2px inset per side so the flag's center aligns with the Bullion ingot's
+		   center when the two cards stack. */
+		grid-template-columns: 22px minmax(2.25rem, auto) 1fr 1fr 1fr 1fr;
+		gap: var(--rl-space-xs) 10px;
+		align-items: center;
+	}
+	.tickers-forex-header {
+		/* Symmetric vertical padding so header text sits centered in its band instead of hugging
+		   the scroll container's top edge. padding-inline-end mirrors the same reservation on rows
+		   below — without it, the rightmost header label (24h) sits flush against the scrollbar. */
+		padding: var(--rl-space-xs) var(--rl-space-sm) var(--rl-space-xs) 0;
+		border-bottom: 1px solid var(--rl-color-border);
+		/* Sticky inside the scroll container — keeps column labels visible as rows scroll. */
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		background: var(--rl-color-surface);
+	}
+	.tickers-forex-col-num {
+		font-size: var(--rl-text-2xs);
+		font-weight: var(--rl-font-medium);
+		color: var(--rl-color-text-subtle);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		text-align: right;
+	}
+	.tickers-forex-row {
+		/* padding-inline-end matches the header — keeps the 24h column from sitting flush against
+		   the scrollbar gutter reserved by scrollbar-gutter:stable on the container. Vertical
+		   10px opens breathing room between rows (previously 6px felt cramped for 20+ rows). */
+		padding: 10px var(--rl-space-sm) 10px 0;
+		border-top: 1px solid rgba(255, 255, 255, 0.04);
+	}
+	.tickers-forex-row:first-child {
+		border-top: none;
+	}
+	/* Hairline divider between Tier A (pinned 5) and Tier B — strong enough to register the
+	   group change without a label. Uses border-strong (gray-600) rather than border (gray-700)
+	   so it reads above the near-invisible inter-row rule at rgba(255,255,255,0.04). */
+	.tickers-forex-row.tickers-forex-tier-divider {
+		border-top: 1px solid var(--rl-color-border-strong);
+		margin-top: 4px;
+		padding-top: 10px;
+	}
+	.tickers-forex-flag {
+		display: inline-flex;
+		align-items: center;
+		/* 4px inset from col 1's left edge — optical nudge: round flags need a slightly
+		   larger inset than the rectangular ingot to read as aligned across cards. */
+		justify-content: flex-start;
+		padding-inline-start: 4px;
+	}
+	.tickers-forex-flag img {
+		display: block;
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+	}
+	.tickers-forex-code {
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-sm);
+		font-weight: var(--rl-font-bold);
+		letter-spacing: -0.2px;
+		color: var(--rl-color-text);
+	}
+	.tickers-forex-num {
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-sm);
+		font-weight: var(--rl-font-medium);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.3px;
+		color: var(--rl-color-text-subtle);
+		text-align: right;
+	}
+	/* Avg (mid-market) is the headline — promoted above buy/sell, which stay muted as reference
+	   points. Buy/sell spread matters less than the unbiased mid for quick FX glances. */
+	.tickers-forex-avg {
+		color: var(--rl-color-text);
+		font-weight: var(--rl-font-semibold);
+	}
+	.tickers-forex-delta.up {
+		color: var(--rl-color-up);
+	}
+	.tickers-forex-delta.down {
+		color: var(--rl-color-down);
+	}
+	.tickers-forex-delta.flat,
+	.tickers-forex-delta.unknown {
+		color: var(--rl-color-text-faint);
+	}
+
 	/* Price rows */
 	.tickers-price-row {
 		display: flex;
@@ -1081,27 +1650,25 @@
 	}
 
 	/* Spread */
-	.tickers-spread-row {
-		display: flex;
-		justify-content: flex-end;
+	/* 24H change cell inside the metal table (column 4). Right-aligned to match the column
+	   header and keep numeric rhythm. Colored up/down/flat using the same semantic tokens as
+	   the crypto card's 24H change. */
+	.tickers-metal-day-cell {
+		display: inline-flex;
 		align-items: center;
-		padding-top: var(--rl-space-sm);
-		margin-top: var(--rl-space-xs);
-		border-top: 1px solid var(--rl-color-border);
-		gap: 6px;
-	}
-	.tickers-spread-label {
-		font-size: var(--rl-text-2xs);
-		color: var(--rl-color-text-subtle);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-	}
-	.tickers-spread-value {
+		justify-content: flex-end;
+		align-self: center;
 		font-family: var(--rl-font-mono);
-		font-size: 13px;
+		font-size: var(--rl-text-sm);
 		font-weight: var(--rl-font-semibold);
-		color: var(--rl-color-spread);
+		color: var(--rl-color-text-faint);
 		font-variant-numeric: tabular-nums;
+	}
+	.tickers-metal-day-cell.up {
+		color: var(--rl-color-up);
+	}
+	.tickers-metal-day-cell.down {
+		color: var(--rl-color-down);
 	}
 
 	/* Chart section */
