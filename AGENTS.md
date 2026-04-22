@@ -190,11 +190,11 @@ Both `chrome-devtools` and `playwright` MCP servers are configured. **`chrome-de
 
 **cloudflare-observability MCP** — core infra tooling for this project. Two tool classes — never mix them:
 
-| Class | Tools | Auth needed |
-|---|---|---|
-| **Docs** | `search_cloudflare_documentation` | No |
-| **Ops** | `accounts_list`, `set_active_account`, `workers_list`, `workers_get_worker`, `workers_get_worker_code`, `query_worker_observability`, `observability_keys`, `observability_values` | Yes |
-| **Wizard** | `migrate_pages_to_workers_guide` | No |
+| Class      | Tools                                                                                                                                                                              | Auth needed |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| **Docs**   | `search_cloudflare_documentation`                                                                                                                                                  | No          |
+| **Ops**    | `accounts_list`, `set_active_account`, `workers_list`, `workers_get_worker`, `workers_get_worker_code`, `query_worker_observability`, `observability_keys`, `observability_values` | Yes         |
+| **Wizard** | `migrate_pages_to_workers_guide`                                                                                                                                                   | No          |
 
 **Docs class** — governed by the Docs lookup strategy above (cache first, MCP second, web last). No auth needed; call freely.
 
@@ -202,14 +202,15 @@ Both `chrome-devtools` and `playwright` MCP servers are configured. **`chrome-de
 
 1. Verify `CLOUDFLARE_API_TOKEN` is set in env, OR that `~/.wrangler/config/` contains valid OAuth. If neither: **stop — tell the user, do not proceed.**
 2. Call `accounts_list`:
-   - Success → proceed to step 3.
-   - Auth error → **stop.** Tell the user: set `CLOUDFLARE_API_TOKEN` or run `wrangler login`. Do not retry.
-   - No response → retry once. Still no response → **stop.** Tell the user the MCP server is unresponsive.
+    - Success → proceed to step 3.
+    - Auth error → **stop.** Tell the user: set `CLOUDFLARE_API_TOKEN` or run `wrangler login`. Do not retry.
+    - No response → retry once. Still no response → **stop.** Tell the user the MCP server is unresponsive.
 3. Call `set_active_account` with the account ID before any other ops tool. Required — no exceptions.
 
 **Bail-out rule (universal, all Cloudflare MCP ops tools):** Any tool that returns an auth error or produces no response after 1 retry is a **terminal failure for this session**. Stop immediately. Do not loop. Do not try a different tool as a workaround. Surface the exact error to the user verbatim.
 
 **Fallback when MCP is unavailable:**
+
 - Docs questions → `pnpm docs:fetch <url>` / web search per the Docs lookup strategy.
 - Ops questions → `wrangler` CLI via Bash (`wrangler tail`, `wrangler deployments list`, `wrangler kv key:get`). If no `wrangler` equivalent exists for the specific operation, tell the user MCP is down and ask them to run `wrangler whoami` to confirm auth state.
 
