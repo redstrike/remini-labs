@@ -1,5 +1,6 @@
 import { browser } from '$app/environment'
 import { createEventBus } from '$lib/event-bus'
+import { useEventListener } from 'runed'
 
 import {
 	fetchCryptoTickers as fetchBinanceTickers,
@@ -188,10 +189,13 @@ export function useTickers(initialData: TickersData) {
 
 	let now = $state(Date.now())
 
-	// Fetch all data when tab becomes visible again (debounced)
-	$effect(() => {
-		if (!browser) return
-		function onVisible() {
+	// Fetch all data when tab becomes visible again (debounced). useEventListener
+	// wraps its listener body in $effect internally — client-only by definition,
+	// so no `if (!browser)` guard needed here. Auto-cleanup on component unmount.
+	useEventListener(
+		() => document,
+		'visibilitychange',
+		() => {
 			if (document.visibilityState !== 'visible') return
 			now = Date.now()
 			if (now - lastMetalsFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchMetals()
@@ -201,10 +205,8 @@ export function useTickers(initialData: TickersData) {
 			if (now >= nextStocksPoll) fetchStocks()
 			// Forex: only revive if user has opened the tab at least once this session.
 			if (forexPollActive && now - lastForexFetchedAt >= VISIBILITY_DEBOUNCE_MS) fetchForex()
-		}
-		document.addEventListener('visibilitychange', onVisible)
-		return () => document.removeEventListener('visibilitychange', onVisible)
-	})
+		},
+	)
 
 	// Gold: SJC from table API (prices are per chỉ, × 10 for per lượng)
 	const sjcTable = $derived(priceTable?.gold.find((i) => i.productType === 'SJC') ?? null)
