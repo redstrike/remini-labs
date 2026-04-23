@@ -7,7 +7,7 @@ import { defineConfig } from 'vitest/config'
 // only matches /.test.[jt]s/ which excludes .mts files.
 export default defineConfig({
 	test: {
-		include: ['tests/scripts/**/*.test.mts'],
+		include: ['tests/scripts/**/*.test.mts', 'src/**/*.test.ts'],
 		environment: 'node',
 		// Hook retry chain on network failure: 4 attempts × pnpm startup + 9s of
 		// inter-attempt delays. Give ourselves generous headroom for slow Windows DNS.

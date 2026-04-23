@@ -19,6 +19,7 @@
 		"check:scripts:fast": "tsgo --noEmit -p scripts/tsconfig.json",
 		"test:e2e": "playwright test",
 		"test:scripts": "vitest run tests/scripts",
+		"test:lib": "vitest run src/lib",
 		"fmt": "oxfmt && prettier --write \"**/*.svelte\"",
 		"fmt:check": "oxfmt --check && prettier --check \"**/*.svelte\"",
 		"lint": "oxlint",
@@ -28,7 +29,8 @@
 		"gen:brand-assets": "node scripts/gen-brand-assets.mts"
 	},
 	"dependencies": {
-		"lightweight-charts": "^5.1.0"
+		"lightweight-charts": "^5.1.0",
+		"runed": "^0.37.1"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20260422.1",

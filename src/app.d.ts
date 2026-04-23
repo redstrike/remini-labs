@@ -1,6 +1,15 @@
 import type { CacheStorage, ExecutionContext, IncomingRequestCfProperties } from '@cloudflare/workers-types'
 
 declare global {
+	// Workers `caches.default` is not in the W3C spec, so `lib.dom` doesn't ship its type.
+	// Augment the global `CacheStorage` so TypeScript recognises the Workers extension
+	// uniformly — real runtime is Workers; dev runtime is our polyfill at
+	// `src/lib/workers-cache-polyfill/`. Declared here (not in the polyfill) so the
+	// type is visible to every module in the compilation graph, including test files.
+	interface CacheStorage {
+		readonly default: Cache
+	}
+
 	namespace App {
 		// interface Error {}
 		interface Locals {
