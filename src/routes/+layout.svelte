@@ -5,21 +5,29 @@
 	import { Button } from '$lib/components/shadcn-svelte/button/index.js'
 	import { House } from '@lucide/svelte'
 	import { page } from '$app/state'
+	import { resolve } from '$app/paths'
 	import { browser } from '$app/environment'
+	import { PersistedState } from 'runed'
 	import { initClockSync } from '$lib/clock-sync'
 
 	let { children } = $props()
 
-	// Initialize clock sync from SSR-provided server time
-	if (browser && page.data.serverTime) {
-		initClockSync(page.data.serverTime)
+	// Initialize clock sync on hydration — async NTP-lite fetch against /api/clock.
+	// Fire-and-forget: layout is long-lived, no cleanup needed.
+	if (browser) {
+		initClockSync()
 	}
 
 	let isHome = $derived(page.url.pathname === '/')
 	let appName = $derived(page.data.meta?.appName)
-	// Read initial sidebar state from server cookie — intentionally one-time capture
-	const initialSidebarOpen = page.data.sidebarOpen ?? true
-	let sidebarOpen = $state(initialSidebarOpen)
+	// Shell-level transient UI state — sessionStorage envelope keyed
+	// `remini-labs.shell.ui`. Survives in-tab reload + SPA nav; resets on
+	// new tab / browser session (per W3C sessionStorage scope). Chrome state
+	// is per-tab context, not a user preference — localStorage would leak
+	// across tabs & devices (if ever synced), so session is the right tier.
+	// Envelope shape lets us add future shell toggles (theme mode, header
+	// density, etc.) under the same key without sprawl.
+	const shell = new PersistedState('remini-labs.shell.ui', { sidebarOpen: false }, { storage: 'session' })
 
 	// ── Meta tag contract ────────────────────────────────────────────────
 	// Each mini-app's +page.ts can set page.data.meta.{appName, description, ogImage}.
@@ -64,21 +72,20 @@
 	<meta name="twitter:image:alt" content={title} />
 </svelte:head>
 
-<Sidebar.Provider bind:open={sidebarOpen}>
-	<AppSidebar {isHome} closeSidebar={() => (sidebarOpen = false)} />
+<Sidebar.Provider bind:open={shell.current.sidebarOpen}>
+	<AppSidebar {isHome} closeSidebar={() => (shell.current.sidebarOpen = false)} />
 	<Sidebar.Inset>
 		<header
 			class="sticky top-0 z-10 flex w-full items-center gap-2 border-b bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
 			<Sidebar.Trigger />
 			<div class="flex items-center gap-2 text-sm">
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<a
-					href="/"
+					href={resolve('/')}
 					class="flex items-center gap-2"
 					onclick={(e) => {
 						if (isHome) {
 							e.preventDefault()
-							sidebarOpen = false
+							shell.current.sidebarOpen = false
 						}
 					}}>
 					<img src="/favicon.png" alt="" width="18" height="18" />

@@ -37,7 +37,6 @@ export interface PriceTable {
 	gold: PriceTableItem[]
 	silver: PriceTableItem[]
 	updatedAt: string
-	serverTime: string // ISO 8601 — server clock at response time
 	// 24h stats computed from 1D intraday chart — optional because `fetchPriceTable` alone
 	// returns the spot snapshot only; the spots/metals API composes dayStats on top. Null
 	// per-asset if that metal's chart fetch failed (spot prices still render; UI falls back
@@ -194,7 +193,6 @@ export async function fetchPriceTable(): Promise<PriceTable> {
 		gold: items.filter((i) => i.type === 1),
 		silver: items.filter((i) => i.type === 2),
 		updatedAt,
-		serverTime: new Date().toISOString(),
 	}
 }
 

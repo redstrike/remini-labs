@@ -2,7 +2,7 @@
 	import * as Tooltip from '$lib/components/shadcn-svelte/tooltip/index.js'
 	import { cn, type WithElementRef } from '$lib/utils.js'
 	import type { HTMLAttributes } from 'svelte/elements'
-	import { SIDEBAR_COOKIE_MAX_AGE, SIDEBAR_COOKIE_NAME, SIDEBAR_WIDTH, SIDEBAR_WIDTH_ICON } from './constants.js'
+	import { SIDEBAR_WIDTH, SIDEBAR_WIDTH_ICON } from './constants.js'
 	import { setSidebar } from './context.svelte.js'
 
 	let {
@@ -23,9 +23,11 @@
 		setOpen: (value: boolean) => {
 			open = value
 			onOpenChange(value)
-
-			// This sets the cookie to keep the sidebar state.
-			document.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+			// Remini Labs customization: upstream shadcn persists open-state in a
+			// `sidebar:state` cookie here. Removed deliberately — sidebar is a
+			// transient per-session UI state, not a user preference worth syncing
+			// across requests / devices. Default closed, user toggles as needed.
+			// Preserve on next shadcn-svelte:sync (see SIDEBAR_COOKIE_* in constants.ts).
 		},
 	})
 </script>
