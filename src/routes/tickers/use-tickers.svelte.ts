@@ -225,22 +225,18 @@ export function useTickers(initialData: TickersData) {
 	)
 
 	// Silver: PQ 999 bar only (no my nghe), small unit first (lượng → kg)
+	const isKgUnit = (i: { unit?: string | null }) => !!i.unit?.toLowerCase().includes('kg')
 	const silverItems = $derived(
 		(priceTable?.silver ?? [])
 			.filter((i) => i.productType !== 'BM1OZ' && !i.name.includes('miếng'))
-			.sort((a, b) => {
-				// luong first (small), kg second (big)
-				const aIsKg = a.unit?.toLowerCase().includes('kg') ? 1 : 0
-				const bIsKg = b.unit?.toLowerCase().includes('kg') ? 1 : 0
-				return aIsKg - bIsKg
-			}),
+			.sort((a, b) => (isKgUnit(a) ? 1 : 0) - (isKgUnit(b) ? 1 : 0)),
 	)
 
 	const selectedSilver = $derived(silverItems[selectedSilverIdx] ?? silverItems[0] ?? null)
 
-	// Silver Kg item — the largest-unit row the Bullion card shows. Hoisted so the
-	// `.find()` doesn't run on every +page.svelte render / NOW_TICK tick.
-	const silverKgItem = $derived(silverItems.find((i) => i.unit?.toLowerCase().includes('kg')) ?? null)
+	// Hoisted so the `.find()` doesn't run on every +page.svelte render / NOW_TICK tick.
+	const silverKgItem = $derived(silverItems.find(isKgUnit) ?? null)
+	const silverLuongItem = $derived(silverItems.find((i) => !isKgUnit(i)) ?? null)
 
 	// 24h summary — unit-normalize each metal to the unit shown in its FIRST card row, so
 	// L/H visually align with the price the user glances at first.
@@ -587,6 +583,9 @@ export function useTickers(initialData: TickersData) {
 		},
 		get silverKgItem() {
 			return silverKgItem
+		},
+		get silverLuongItem() {
+			return silverLuongItem
 		},
 		get goldDayStats() {
 			return goldDayStats
