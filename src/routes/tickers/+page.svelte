@@ -256,10 +256,12 @@
 
 	// Bullion expand-on-tap — tapping a metal row reveals its Buy/Sell in every VCB
 	// currency. Exclusive (one row at a time) so the card stays compact; tap the same
-	// row again to collapse, tap a different row to switch.
-	let expandedBullion = $state<'gold' | 'silver' | null>(null)
-	function toggleBullionExpand(metal: 'gold' | 'silver') {
-		expandedBullion = expandedBullion === metal ? null : metal
+	// row again to collapse, tap a different row to switch. Keys include the unit since
+	// the card now renders 4 rows (per-metal × per-unit: Lượng / Kg / Chỉ).
+	type BullionKey = 'gold-luong' | 'silver-kg' | 'gold-chi' | 'silver-luong'
+	let expandedBullion = $state<BullionKey | null>(null)
+	function toggleBullionExpand(key: BullionKey) {
+		expandedBullion = expandedBullion === key ? null : key
 	}
 
 	// Rows in VCB_CURRENCY_ORDER-order, enriched with today/yesterday rates + Δ%.
@@ -336,10 +338,10 @@
 							{@const rate = tickers.forexToday.rates.get(code)}
 							{#if rate?.avg}
 								<div class="tickers-bullion-sub-row">
-									<span class="tickers-bullion-sub-asset">
+									<span class="tickers-bullion-sub-flag">
 										<img src={flagUrl(code)} alt="" width="18" height="12" loading="lazy" />
-										<span class="tickers-bullion-sub-code">{code}</span>
 									</span>
+									<span class="tickers-bullion-sub-code">{code}</span>
 									<span class="tickers-bullion-sub-value">
 										{formatForeign(vndBuy, rate.avg)}
 									</span>
@@ -349,6 +351,7 @@
 									<span class="tickers-bullion-sub-value tickers-bullion-sub-avg">
 										{formatForeign(vndAvg, rate.avg)}
 									</span>
+									<span></span>
 									<span></span>
 								</div>
 							{/if}
@@ -361,81 +364,50 @@
 				</div>
 			{/snippet}
 
-			{#snippet goldRow()}
-				{@const stats = tickers.goldDayStats}
-				{@const up = stats ? stats.changePercent > 0 : false}
-				{@const down = stats ? stats.changePercent < 0 : false}
-				{@const pct = stats ? formatPctSigned(stats.changePercent) : '—'}
-				{@const isExpanded = expandedBullion === 'gold'}
-				{#if tickers.goldItem}
-					{@const avg = (tickers.goldItem.buyLuong + tickers.goldItem.sellLuong) / 2}
-					<button
-						type="button"
-						class="tickers-metal-row"
-						class:expanded={isExpanded}
-						title="SJC — 999.9 vàng miếng · giá per Lượng · tap for foreign-currency prices"
-						aria-expanded={isExpanded}
-						aria-controls="bullion-sub-gold"
-						onclick={() => toggleBullionExpand('gold')}>
-						<span class="tickers-metal-flag">
-							<img src={metalIconUrl('gold')} alt="SJC gold" width="22" height="22" />
-						</span>
-						<span class="tickers-metal-label">Gold</span>
-						<span class="tickers-metal-value">{formatKVND(tickers.goldItem.buyLuong)}</span>
-						<span class="tickers-metal-value">{formatKVND(tickers.goldItem.sellLuong)}</span>
-						<span class="tickers-metal-value tickers-metal-avg">{formatKVND(avg)}</span>
-						<span class="tickers-metal-day-cell" class:up class:down>
-							{pct}
-							<span class="tickers-metal-chevron" aria-hidden="true">
-								<ChevronDown size={14} />
-							</span>
-						</span>
-					</button>
-					{#if isExpanded}
-						{@render bullionSubPanel(
-							tickers.goldItem.buyLuong,
-							tickers.goldItem.sellLuong,
-							'bullion-sub-gold',
-						)}
-					{/if}
-				{/if}
-			{/snippet}
-
-			{#snippet silverRow()}
-				{@const stats = tickers.silverDayStats}
-				{@const up = stats ? stats.changePercent > 0 : false}
-				{@const down = stats ? stats.changePercent < 0 : false}
-				{@const pct = stats ? formatPctSigned(stats.changePercent) : '—'}
-				{@const isExpanded = expandedBullion === 'silver'}
-				<!-- Show only the Kg row (largest unit). PQ publishes Lượng + Kg; we pick Kg. -->
-				{@const kgItem = tickers.silverKgItem}
-				{#if kgItem}
-					{@const avg = (kgItem.buyPrice + kgItem.sellPrice) / 2}
-					<button
-						type="button"
-						class="tickers-metal-row"
-						class:expanded={isExpanded}
-						title="Phú Quý — 999 silver ingot · giá per Kg · tap for foreign-currency prices"
-						aria-expanded={isExpanded}
-						aria-controls="bullion-sub-silver"
-						onclick={() => toggleBullionExpand('silver')}>
-						<span class="tickers-metal-flag">
-							<img src={metalIconUrl('silver')} alt="PQ silver" width="22" height="22" />
-						</span>
-						<span class="tickers-metal-label">Silver</span>
-						<span class="tickers-metal-value">{formatKVND(kgItem.buyPrice)}</span>
-						<span class="tickers-metal-value">{formatKVND(kgItem.sellPrice)}</span>
-						<span class="tickers-metal-value tickers-metal-avg">{formatKVND(avg)}</span>
-						<span class="tickers-metal-day-cell" class:up class:down>
-							{pct}
-							<span class="tickers-metal-chevron" aria-hidden="true">
-								<ChevronDown size={14} />
-							</span>
-						</span>
-					</button>
-					{#if isExpanded}
-						{@render bullionSubPanel(kgItem.buyPrice, kgItem.sellPrice, 'bullion-sub-silver')}
-					{/if}
+			<!-- Row sizes anchor on Gold Chỉ (0.875rem); Lượng scales by mass cube-root (≈2.154×);
+			     Silver Kg is capped well below physical (true ≈6.44×) to fit the row grid. -->
+			{#snippet bullionRow(row: {
+				metal: 'gold' | 'silver'
+				unit: 'lượng' | 'kg' | 'chỉ'
+				iconSize: string
+				buy: number
+				sell: number
+				stats: { changePercent: number } | null
+				key: BullionKey
+				title: string
+			})}
+				{@const up = row.stats ? row.stats.changePercent > 0 : false}
+				{@const down = row.stats ? row.stats.changePercent < 0 : false}
+				{@const pct = row.stats ? formatPctSigned(row.stats.changePercent) : '—'}
+				{@const isExpanded = expandedBullion === row.key}
+				{@const avg = (row.buy + row.sell) / 2}
+				{@const metalLabel = row.metal === 'gold' ? 'Gold' : 'Silver'}
+				{@const panelId = `bullion-sub-${row.key}`}
+				<button
+					type="button"
+					class="tickers-metal-row"
+					class:expanded={isExpanded}
+					title={row.title}
+					aria-expanded={isExpanded}
+					aria-controls={panelId}
+					onclick={() => toggleBullionExpand(row.key)}>
+					<span class="tickers-metal-flag" style="--ingot-size: {row.iconSize}">
+						<img src={metalIconUrl(row.metal)} alt="{row.metal === 'gold' ? 'SJC' : 'PQ'} {row.metal}" />
+					</span>
+					<span class="tickers-metal-label">
+						{metalLabel}
+						<span class="tickers-metal-unit">{row.unit}</span>
+					</span>
+					<span class="tickers-metal-value">{formatKVND(row.buy)}</span>
+					<span class="tickers-metal-value">{formatKVND(row.sell)}</span>
+					<span class="tickers-metal-value tickers-metal-avg">{formatKVND(avg)}</span>
+					<span class="tickers-metal-day-cell" class:up class:down>{pct}</span>
+					<span class="tickers-metal-chevron" aria-hidden="true">
+						<ChevronDown size={14} />
+					</span>
+				</button>
+				{#if isExpanded}
+					{@render bullionSubPanel(row.buy, row.sell, panelId)}
 				{/if}
 			{/snippet}
 
@@ -486,18 +458,68 @@
 
 				{#if metalTab === 'metals'}
 					<div class="tickers-metal-groups">
-						<div class="tickers-metal-header">
+						<div class="tickers-table-header tickers-metal-header">
 							<span></span>
 							<span></span>
-							<span class="tickers-metal-col-label">Buy</span>
-							<span class="tickers-metal-col-label">Sell</span>
-							<span class="tickers-metal-col-label">Avg</span>
-							<span class="tickers-metal-col-label">24H</span>
+							<span class="tickers-table-col-label">Buy</span>
+							<span class="tickers-table-col-label">Sell</span>
+							<span class="tickers-table-col-label">Avg</span>
+							<span class="tickers-table-col-label">24H</span>
+							<span></span>
 						</div>
-						{@render goldRow()}
-						{@render silverRow()}
+						<!-- Fixed order: Gold Lượng (~168M) → Silver Kg (~11M) → Gold Chỉ (~16M, but
+						     structurally "smaller unit of the biggest metal") → Silver Lượng (~410K).
+						     User-specified: not dynamic; silver kg is between gold lượng and gold chỉ. -->
+						{#if tickers.goldItem}
+							{@render bullionRow({
+								metal: 'gold',
+								unit: 'lượng',
+								iconSize: '1.875rem',
+								buy: tickers.goldItem.buyLuong,
+								sell: tickers.goldItem.sellLuong,
+								stats: tickers.goldDayStats,
+								key: 'gold-luong',
+								title: 'SJC — 999.9 vàng miếng · giá per lượng · tap for foreign-currency prices',
+							})}
+						{/if}
+						{#if tickers.silverKgItem}
+							{@render bullionRow({
+								metal: 'silver',
+								unit: 'kg',
+								iconSize: '2.25rem',
+								buy: tickers.silverKgItem.buyPrice,
+								sell: tickers.silverKgItem.sellPrice,
+								stats: tickers.silverDayStats,
+								key: 'silver-kg',
+								title: 'Phú Quý — 999 silver ingot · giá per kg · tap for foreign-currency prices',
+							})}
+						{/if}
+						{#if tickers.goldItem}
+							{@render bullionRow({
+								metal: 'gold',
+								unit: 'chỉ',
+								iconSize: '0.875rem',
+								buy: tickers.goldItem.buyChi,
+								sell: tickers.goldItem.sellChi,
+								stats: tickers.goldDayStats,
+								key: 'gold-chi',
+								title: 'SJC — 999.9 vàng miếng · giá per chỉ · tap for foreign-currency prices',
+							})}
+						{/if}
+						{#if tickers.silverLuongItem}
+							{@render bullionRow({
+								metal: 'silver',
+								unit: 'lượng',
+								iconSize: '1.875rem',
+								buy: tickers.silverLuongItem.buyPrice,
+								sell: tickers.silverLuongItem.sellPrice,
+								stats: tickers.silverDayStats,
+								key: 'silver-luong',
+								title: 'Phú Quý — 999 silver ingot · giá per lượng · tap for foreign-currency prices',
+							})}
+						{/if}
 					</div>
-					<div class="tickers-metal-footer-note">Gold per Lượng · Silver per Kg · 1 kVND = 1,000 VND</div>
+					<div class="tickers-metal-footer-note">1 kVND = 1.000 VND</div>
 				{:else if metalTab === 'forex'}
 					<div class="tickers-forex">
 						{#if !tickers.forexToday && fetchingForex}
@@ -512,13 +534,13 @@
 							<div class="tickers-forex-empty">Tap refresh to load rates.</div>
 						{:else}
 							<div class="tickers-forex-table" role="table" aria-label="VCB exchange rates (VND)">
-								<div class="tickers-forex-header" role="row">
+								<div class="tickers-table-header tickers-forex-header" role="row">
 									<span aria-hidden="true"></span>
 									<span aria-hidden="true"></span>
-									<span role="columnheader" class="tickers-forex-col-num">Buy</span>
-									<span role="columnheader" class="tickers-forex-col-num">Sell</span>
-									<span role="columnheader" class="tickers-forex-col-num">Avg</span>
-									<span role="columnheader" class="tickers-forex-col-num">24h</span>
+									<span role="columnheader" class="tickers-table-col-label">Buy</span>
+									<span role="columnheader" class="tickers-table-col-label">Sell</span>
+									<span role="columnheader" class="tickers-table-col-label">Avg</span>
+									<span role="columnheader" class="tickers-table-col-label">24h</span>
 								</div>
 								{#each forexRows as row, i (row.code)}
 									{@const d = formatDelta(row.delta)}
@@ -1007,8 +1029,12 @@
 		min-height: 215px;
 		transition: background var(--rl-duration-short) var(--rl-ease-move);
 	}
+	/* Halfway lift between `--rl-color-surface` (#171717) and `--rl-color-surface-raised`
+	   (#262626). The full raised value was crowding the row:hover overlay (7% white), leaving
+	   the pointed-at row indistinguishable from the rest of the card. A gentler card lift keeps
+	   elevation affordance while leaving headroom for the row's local focal highlight. */
 	.tickers-card:hover {
-		background: var(--rl-color-surface-raised);
+		background: #1f1f1f;
 	}
 
 	/* Card header: tabs left, status right */
@@ -1258,18 +1284,28 @@
 	   theoretical. */
 	.tickers-metal-groups {
 		display: grid;
-		/* Numeric columns are `1fr` (proportional) — defined tracks, so subgrid sub-rows
-		   cannot push them wider no matter how long a value like "9.396.914" (KRW) gets.
-		   That keeps BUY/SELL/AVG/24H pinned while expanding/collapsing the sub-forex
-		   panel, and the grid naturally fills the card width so the 24H column anchors
-		   to the card's right edge at every viewport (phone, 2-col tablet, desktop). */
-		grid-template-columns: 22px 3rem 1fr 1fr 1fr 1fr;
+		/* Col 1 at 2.5rem — matches the biggest ingot (Silver Kg = 2.5rem). Smaller-unit icons
+		   center inside the same track; the excess column space around smaller ingots is the
+		   visual cue that those units carry less material.
+		   Col 7 is `auto`-sized for the toggle chevron — dedicated column anchored to the card's
+		   right edge, consistent position across collapsed + expanded states.
+		   Numeric cols (3–6) use `minmax(0, 1fr)` — the `0` minimum is critical vs bare `1fr`
+		   (which defaults to `minmax(auto, 1fr)` and lets long sub-row values like KRW's
+		   "9.396.914" push the track wider, causing re-layout on expand/collapse). The `0` floor
+		   pins tracks to equal 1fr shares regardless of sub-content width, so columns stay
+		   rock-steady when toggling the foreign-currency sub-panel. */
+		grid-template-columns: 2rem 2.25rem minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(3rem, 0.7fr) auto;
 		column-gap: 10px;
 		row-gap: var(--rl-space-xs);
 		padding: var(--rl-space-sm) 0 0;
+		/* No negative margin — the table stays inside the card's 20px padding. Expand/collapse
+		   stability still holds thanks to the `minmax(0, 1fr)` track definition above, which
+		   prevents sub-row content from growing columns. The card's padding gives the numeric
+		   columns a visible gutter from the card border, and the chevron (col 7) lands at the
+		   card's inner padding edge rather than pressed against the border. */
 	}
 	/* Header, data rows, AND sub-rows are each their own subgrid inheriting the parent's
-	   6 tracks. Subgrid preserves column alignment automatically — main row "Gold 167.500"
+	   7 tracks. Subgrid preserves column alignment automatically — main row "Gold 167.500"
 	   lines up with sub row "USD 6,383.38" in the same Buy column, etc. */
 	.tickers-metal-header,
 	.tickers-metal-row {
@@ -1294,49 +1330,81 @@
 		border-radius: var(--rl-radius-sm);
 		transition: background var(--rl-duration-micro) var(--rl-ease-move);
 	}
+	/* Row hover must out-step the card's own `:hover` (which raises to `surface-raised`).
+	   At 3% white the row overlay disappeared on top of the raised card — bumped to 7% so the
+	   pointed-at row reads clearly as a foreground element against the already-elevated card. */
 	button.tickers-metal-row:hover {
-		background: rgba(255, 255, 255, 0.03);
+		background: rgba(255, 255, 255, 0.07);
 	}
 	button.tickers-metal-row:focus-visible {
 		outline: 2px solid var(--rl-color-border-strong);
 		outline-offset: -2px;
 	}
-	/* Flag cell — ingot icon occupying the 18px fixed-width leading column. Same column
+	/* Flag cell — ingot icon occupying the col 1 (2.5rem) leading column. Same column
 	   position the VCB Forex flag column claims, so when the sub-panel renders country
 	   flags below, they line up in the same track. Source attribution (SJC / Phú Quý)
-	   lives on the row's `title` tooltip instead of stealing horizontal space on mobile. */
+	   lives on the row's `title` tooltip instead of stealing horizontal space on mobile.
+	   Per-row icon size flows through the `--ingot-size` custom property set inline on the
+	   flag cell — rem values (0.875 / 1.875 / 2.5rem) scale with the root-font-size breakpoint
+	   at ≤720px, keeping physical-ratio cues proportionate across desktop and mobile. */
 	.tickers-metal-flag {
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
+		/* Right-justify the ingot within its 2.5rem track so smaller icons (Lượng 1.875rem, Chỉ
+		   0.875rem) sit adjacent to the label column rather than centered in empty space. The
+		   biggest icon (Silver Kg at 2.5rem) fills the track and lands flush to the right edge
+		   regardless. Net effect: ingot + metal name read as a single asset identity unit. */
+		justify-content: flex-end;
 	}
 	.tickers-metal-flag img {
 		display: block;
-		width: 22px;
-		height: 22px;
+		width: var(--ingot-size);
+		height: var(--ingot-size);
+		/* Silver Kg's `--ingot-size` (2.25rem) exceeds col-1's 2rem track by ~4px at 16root.
+		   Override Tailwind preflight's `max-width: 100%` so the ingot renders at the declared
+		   rem rather than clamping to the track width. `flex-end` on the parent anchors it to
+		   col 1's right edge; the ~4px spillover bleeds leftward through the card's internal
+		   padding (20px), which has room. */
+		max-width: none;
 	}
+	/* Stacked label: metal name bold on top, unit name muted below. Stacked (not inline)
+	   because the 3rem label track is too narrow to fit "Gold Lượng" on one line at
+	   readable font-sizes — vertical stacking keeps the column width unchanged and gives
+	   each unit row a self-describing label without stealing from the price columns. */
 	.tickers-metal-label {
+		display: flex;
+		flex-direction: column;
 		font-size: var(--rl-text-xs);
 		font-weight: var(--rl-font-semibold);
 		color: var(--rl-color-text);
 		letter-spacing: 0.2px;
+		line-height: 1.15;
 	}
-	.tickers-metal-header {
-		padding: var(--rl-space-xs) 0;
+	.tickers-metal-unit {
+		/* 0.5625rem — one notch below `--rl-text-2xs` (0.625rem / 10px desktop, 8.75px mobile).
+		   Rem-based so the unit hint scales in lockstep with the rest of the type system when the
+		   root drops to 14px at ≤720px. Units are a supporting whisper under each metal label
+		   (lượng / kg / chỉ) — deliberately quieter than the smallest token so the metal name
+		   stays the clear anchor of the row's identity. */
+		font-size: 0.5625rem;
+		font-weight: var(--rl-font-normal);
+		color: var(--rl-color-text-subtle);
+		letter-spacing: 0.3px;
+	}
+	/* Shared table-header base — bullion + forex both apply .tickers-table-header alongside
+	   their specific class. Padding, border, and background live here so the two cards' header
+	   bands render at identical height (2px vertical padding = 18-19px total). Sticky / column
+	   gutter details stay on the specific class since only forex scrolls. */
+	.tickers-table-header {
+		padding: 2px 0;
 		border-bottom: 1px solid var(--rl-color-border);
-		/* Matches .tickers-forex-header — header stays at --rl-color-surface while the card
-		   lifts to --rl-color-surface-raised on hover, producing a subtle band that makes the
-		   header pop from the data rows. Same token choice as forex for visual consistency. */
+		/* Header stays at --rl-color-surface while the card lifts to --rl-color-surface-raised on
+		   hover, producing a subtle band that makes the header pop from the data rows. */
 		background: var(--rl-color-surface);
 	}
-	/* Pull the last column's right-aligned text in from the card edge — matches VCB Forex's
-	   `padding-inline-end: var(--rl-space-sm)` treatment on its header+row containers so the
-	   rightmost cell doesn't bump the right edge. */
-	.tickers-metal-header > :last-child,
-	button.tickers-metal-row > :last-child {
-		padding-inline-end: var(--rl-space-sm);
-	}
-	.tickers-metal-col-label {
+	/* Shared table column label — same typography in bullion + forex so the two cards feel like
+	   they're on the same design grid. Kept generic so future tables can reuse. */
+	.tickers-table-col-label {
 		font-size: var(--rl-text-2xs);
 		font-weight: var(--rl-font-medium);
 		color: var(--rl-color-text-subtle);
@@ -1344,6 +1412,9 @@
 		letter-spacing: 0.5px;
 		text-align: right;
 	}
+	/* No padding-inline-end on the last cell — the chevron now owns its own column at the
+	   card's right edge, and the groups container's negative margin-inline + the 10px column
+	   gap provide enough breathing room naturally. */
 	.tickers-metal-value {
 		font-family: var(--rl-font-mono);
 		font-size: var(--rl-text-sm);
@@ -1362,31 +1433,31 @@
 		color: var(--rl-color-text);
 		font-weight: var(--rl-font-semibold);
 	}
-	/* Chevron — tiny visual hint that the row expands. Lives INSIDE the 24H day cell
-	   (not a dedicated column), sitting to the right of the `%` value with a small gap.
-	   Rotates 180° when the row's `.expanded` class is active. aria-expanded on the row
-	   carries the a11y state; class:expanded drives only the rotation. */
+	/* Chevron — tiny visual hint that the row expands. Lives in its own grid column (col 7),
+	   anchored to the card's right edge via the groups container's negative margin-inline.
+	   Fixed position across collapsed + expanded states so the user's eye can target the same
+	   spot repeatedly. Rotates 180° when the row's `.expanded` class is active. aria-expanded
+	   on the row carries the a11y state; class:expanded drives only the rotation. */
 	.tickers-metal-chevron {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
 		justify-content: center;
-		margin-inline-start: var(--rl-space-2xs);
 		color: var(--rl-color-text-faint);
 		transition: transform var(--rl-duration-micro) var(--rl-ease-move);
 	}
 	button.tickers-metal-row.expanded .tickers-metal-chevron {
 		transform: rotate(180deg);
 	}
-	/* Foreign-currency sub-panel — appears when a metal row is tapped. Spans all 6 parent
+	/* Foreign-currency sub-panel — appears when a metal row is tapped. Spans all 7 parent
 	   columns via `grid-column: 1 / -1` AND subgrids to the parent tracks, so sub-row cells
 	   land in the exact same columns as the main row above: USD's buy sits under BUY, its
-	   sell under SELL, etc. Empty spans in the 24h + chevron slots hold the final two
-	   columns open so the subgrid stays aligned.
+	   sell under SELL, etc. Two empty spans at the end hold the 24h + chevron columns open
+	   so the subgrid stays aligned.
 
-	   No layout jump: the parent grid's buy/sell tracks are 1fr (proportional, not
-	   content-sized), so the sub-panel's long values like "1,022,741" can't push those
-	   columns wider. `auto` tracks (label, 24h) are only fed by main rows since sub-rows
-	   leave them empty. Scrollbar styling mirrors VCB Forex exactly. */
+	   No layout jump on expand/collapse: the parent grid's numeric tracks are `minmax(0, 1fr)`
+	   (equal shares with a 0 floor), so long sub-row values like "9.396.914" (KRW) can't push
+	   those columns wider. That's what keeps the main row's BUY/SELL/AVG/24H pinned while the
+	   sub-panel animates in and out. Scrollbar styling mirrors VCB Forex exactly. */
 	.tickers-bullion-sub-panel {
 		grid-column: 1 / -1;
 		display: grid;
@@ -1407,27 +1478,28 @@
 		align-items: center;
 		padding: 4px 0;
 	}
-	.tickers-bullion-sub-row > :last-child {
-		padding-inline-end: var(--rl-space-sm);
-	}
-	/* Asset cell — spans the parent's col 1 (ingot) + col 2 (label) and centers the
-	   flag+code pair across the combined span. Visually the flag lands right around the
-	   col 1/col 2 boundary — between the parent's ingot icon and "Gold"/"Silver" label —
-	   which reads as a nested child hanging under its parent's identity slot rather than
-	   a competing label. */
-	.tickers-bullion-sub-asset {
-		grid-column: 1 / 3;
+	/* Flag cell — lives in col 1 like the parent row's ingot, right-justified so the flag's
+	   right edge sits flush against the col 1/col 2 boundary. This mirrors `.tickers-metal-flag`
+	   exactly (same justify), making each sub-row a visual echo of the parent's identity slot.
+	   `translate` nudges the flag into the col-gap by 4px so the 18px-wide flag clusters visually
+	   with the code (~6px apparent gap), without changing col-1's track width or the code's col-2
+	   left-edge alignment. The parent's wider ingot (~28px) doesn't need this lift because its
+	   larger mass already fills col 1's visual weight. */
+	.tickers-bullion-sub-flag {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		gap: var(--rl-space-2xs);
+		justify-content: flex-end;
+		translate: 4px 0;
 	}
-	.tickers-bullion-sub-asset img {
+	.tickers-bullion-sub-flag img {
 		display: block;
 		width: 18px;
 		height: 12px;
 		border-radius: 1px;
 	}
+	/* Currency code — sits in col 2, left-aligned (default text flow), so its left edge lines up
+	   with the parent row's metal-name left edge. Typography matches the other sub-panel labels;
+	   flex-align center keeps it vertically centered alongside the flag. */
 	.tickers-bullion-sub-code {
 		font-family: var(--rl-font-mono);
 		font-size: var(--rl-text-2xs);
@@ -1437,7 +1509,12 @@
 	}
 	.tickers-bullion-sub-value {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-xs);
+		/* 2xs (10px desktop / 8.75px mobile) — one notch below main row values. Foreign-currency
+		   equivalents like JPY/KRW run 7-digit ("9.344.954"), and at text-xs (11px) they brushed
+		   against adjacent columns on narrower viewports. 2xs gives the tabular-nums layout room
+		   to breathe without looking out of scale — the foreign figures are supplementary context,
+		   not primary data. */
+		font-size: var(--rl-text-2xs);
 		font-variant-numeric: tabular-nums;
 		letter-spacing: -0.2px;
 		color: var(--rl-color-text-subtle);
@@ -1502,7 +1579,11 @@
 	.tickers-forex-table {
 		display: flex;
 		flex-direction: column;
-		max-height: 19rem;
+		/* 18rem targets exactly 10 visible pair rows at desktop's 16px root (288px) with CAD as
+		   the last fully-visible row and a tiny sliver of HKD peeking to signal the table scrolls.
+		   On mobile (14px root) this shrinks to 252px, showing ~9–10 rows — acceptable since the
+		   phone viewport has ample vertical space for scrolling when the user wants more. */
+		max-height: 18rem;
 		overflow-y: auto;
 		scrollbar-gutter: stable;
 		scrollbar-width: thin;
@@ -1524,42 +1605,41 @@
 		align-items: center;
 	}
 	.tickers-forex-header {
-		/* Symmetric vertical padding so header text sits centered in its band instead of hugging
-		   the scroll container's top edge. padding-inline-end mirrors the same reservation on rows
-		   below — without it, the rightmost header label (24h) sits flush against the scrollbar. */
-		padding: var(--rl-space-xs) var(--rl-space-sm) var(--rl-space-xs) 0;
-		border-bottom: 1px solid var(--rl-color-border);
-		/* Sticky inside the scroll container — keeps column labels visible as rows scroll. */
+		/* Forex-specific additions on top of .tickers-table-header: padding-inline-end to keep
+		   the rightmost label (24h) clear of the scrollbar gutter reserved on rows below, plus
+		   sticky positioning so the header stays visible while rows scroll. */
+		padding-inline-end: var(--rl-space-sm);
 		position: sticky;
 		top: 0;
 		z-index: 1;
-		background: var(--rl-color-surface);
-	}
-	.tickers-forex-col-num {
-		font-size: var(--rl-text-2xs);
-		font-weight: var(--rl-font-medium);
-		color: var(--rl-color-text-subtle);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		text-align: right;
 	}
 	.tickers-forex-row {
-		/* padding-inline-end matches the header — keeps the 24h column from sitting flush against
-		   the scrollbar gutter reserved by scrollbar-gutter:stable on the container. Vertical
-		   10px opens breathing room between rows (previously 6px felt cramped for 20+ rows). */
-		padding: 10px var(--rl-space-sm) 10px 0;
+		/* Token-based 4px (--rl-space-xs = 0.25rem) vertical padding — dense enough to surface
+		   ≥10 currency pairs at first sight, comfortable enough to read cleanly. Rows are
+		   non-interactive (no tap target), so density wins over padding comfort, but 2px was too
+		   cramped. padding-inline-end still matches the header so the 24h column stays clear of
+		   the scrollbar gutter. */
+		padding: var(--rl-space-xs) var(--rl-space-sm) var(--rl-space-xs) 0;
 		border-top: 1px solid rgba(255, 255, 255, 0.04);
 	}
-	.tickers-forex-row:first-child {
+	/* Header + row live side-by-side in the same flex container, so `.tickers-forex-row:first-child`
+	   never matches (the header is the first child). Use the adjacent-sibling combinator to target
+	   the row immediately after the header — that's USD, the actual first data row. */
+	.tickers-forex-header + .tickers-forex-row {
+		/* Margin-top gives USD breathing space under the sticky header's bottom border so the
+		   first data row reads as its own band rather than glued to the label row. Matches the
+		   --rl-space-xs rhythm used for row padding, keeping vertical cadence consistent. */
 		border-top: none;
+		margin-top: var(--rl-space-xs);
 	}
-	/* Hairline divider between Tier A (pinned 5) and Tier B — strong enough to register the
-	   group change without a label. Uses border-strong (gray-600) rather than border (gray-700)
-	   so it reads above the near-invisible inter-row rule at rgba(255,255,255,0.04). */
+	/* Hairline divider between Tier A (pinned 5) and Tier B — visual grouping cue without a
+	   label. Dotted style softens the mark so it doesn't compete with the header's solid bottom
+	   rule: header = structural boundary, tier divider = gentle grouping hint. Same color token
+	   keeps the hierarchy legible while the stroke pattern encodes the weight difference. */
 	.tickers-forex-row.tickers-forex-tier-divider {
-		border-top: 1px solid var(--rl-color-border-strong);
-		margin-top: 4px;
-		padding-top: 10px;
+		border-top: 1px dotted var(--rl-color-border);
+		margin-top: 1px;
+		padding-top: var(--rl-space-xs);
 	}
 	.tickers-forex-flag {
 		display: inline-flex;
