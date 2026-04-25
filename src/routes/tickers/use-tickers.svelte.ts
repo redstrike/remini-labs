@@ -69,10 +69,13 @@ const CRYPTO_SYMBOLS: Record<CryptoId, CryptoSymbol> = {
 }
 
 interface TickersData {
-	table: PriceTable | null
+	metals: PriceTable | null
 	crypto: CryptoTicker[] | null
 	cryptoCachedAt: number // epoch ms from SSR's X-Cached-At; 0 when SSR errored
 	vn100: IndexQuote | null
+	// Streamed from +page.ts. Pending promise on first paint, resolves to the gold 1Y series
+	// once the server's chart fetch settles (or null on failure → falls back to client fetch).
+	goldChart: Promise<ChartData | null> | null
 }
 
 // Matches server's DEBOUNCE_TTL. An SSR response older than this means the server served
@@ -83,8 +86,8 @@ const SSR_FRESHNESS_MS = 60 * 1000
 export function useTickers(initialData: TickersData) {
 	const bus = createEventBus<TickersEvents>()
 	const watchlist = createWatchlist()
-	let priceTable = $state<PriceTable | null>(initialData.table)
-	let loading = $state(!initialData.table)
+	let priceTable = $state<PriceTable | null>(initialData.metals)
+	let loading = $state(!initialData.metals)
 	let error = $state<string | null>(null)
 	let selectedSilverIdx = $state(0)
 
@@ -130,20 +133,26 @@ export function useTickers(initialData: TickersData) {
 	// Poll VN100 on the VN market schedule — client only. Self-rescheduling setTimeout
 	// fires at each meaningful transition (5-min tick during trading, 21:00 EOD weekdays,
 	// Mon 09:00 on weekends). Zero wasted wakes during closed windows.
+	// `cancelled` flag closes the cleanup-during-await race: if the component unmounts
+	// while `fetchStocks()` is in flight, the post-await `scheduleNext()` would otherwise
+	// reassign `timer` to a fresh setTimeout that cleanup never sees.
 	$effect(() => {
 		if (!browser) return
 		// Immediate fetch on mount so watchlist stock quotes populate without waiting for
 		// the VN market schedule (which might be hours away during off-hours).
 		if (watchlist.stocks.length > 0) fetchStocks()
+		let cancelled = false
 		let timer: ReturnType<typeof setTimeout> | null = null
 		function scheduleNext() {
 			timer = setTimeout(async () => {
+				if (cancelled) return
 				await fetchStocks()
-				scheduleNext()
+				if (!cancelled) scheduleNext()
 			}, msUntilNextPoll())
 		}
 		scheduleNext()
 		return () => {
+			cancelled = true
 			if (timer) clearTimeout(timer)
 		}
 	})
@@ -473,11 +482,20 @@ export function useTickers(initialData: TickersData) {
 		chartCache.set(asset, { data, fetchedAt: now })
 	}
 
-	// Load default chart on mount — client only
+	// Load default chart on mount — client only.
+	// Streamed `goldChart` is the gold 1Y series — the longest window we ever request, so it
+	// covers every duration slice (7D/15D/30D/90D/180D/1M/1Y) via sliceToWindow. Seed the
+	// cache unconditionally; the data is good for any later return-to-gold click. Drive the
+	// chart UI as long as the user is still on gold — respect whichever duration they're
+	// currently on, since the same payload satisfies all of them.
 	$effect(() => {
 		if (!browser) return
 		if (priceTable && !chartData) {
-			fetchChart('gold', '1M')
+			Promise.resolve(initialData.goldChart).then((data) => {
+				if (data) setCache('gold', data)
+				if (chartAsset !== 'gold') return
+				fetchChart('gold', chartDuration)
+			})
 		}
 	})
 

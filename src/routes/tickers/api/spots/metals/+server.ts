@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit'
 
 import { computeDayStats, fetchChartData, fetchPriceTable } from '../../../shared/phuquy-client'
 import { fetchVcbSnapshot } from '../../../shared/vcb-forex-client'
+import { probeCache } from '../../cache'
 import type { RequestHandler } from './$types'
 
 const CACHE_KEY = 'https://remini-labs.internal/tickers/api/spots/metals'
@@ -60,16 +61,8 @@ async function getUsdAvgRate(cache: Cache | null): Promise<number | null> {
 }
 
 export const GET: RequestHandler = async () => {
-	const cache = (await globalThis.caches?.open('tickers')) ?? null
-
-	// Check cache — only use if within TTL (stored in X-Cached-At header)
-	if (cache) {
-		const cached = await cache.match(CACHE_KEY)
-		if (cached) {
-			const cachedAt = Number(cached.headers.get('X-Cached-At') || 0)
-			if (Date.now() - cachedAt < DEBOUNCE_TTL * 1000) return cached.clone()
-		}
-	}
+	const { debounced, cache } = await probeCache(CACHE_KEY, DEBOUNCE_TTL)
+	if (debounced) return debounced.clone()
 
 	try {
 		// Parallel-fetch the table + both 7D charts + the VCB USD avg rate. 7D (not 1D)

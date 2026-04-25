@@ -45,16 +45,20 @@
 		}
 	}
 
-	// Intentionally capture SSR data once — hook takes over with client-side polling
-	const initialTable = page.data.table ?? null
+	// Intentionally capture SSR data once — hook takes over with client-side polling.
+	// `goldChart` is a streamed promise from +page.ts; pass it through verbatim so the hook
+	// can await it and seed the chart cache.
+	const initialMetals = page.data.metals ?? null
 	const initialCrypto = page.data.crypto ?? null
 	const initialCryptoCachedAt = page.data.cryptoCachedAt ?? 0
 	const initialVN100 = page.data.vn100 ?? null
+	const initialGoldChart = page.data.goldChart ?? null
 	const tickers = useTickers({
-		table: initialTable,
+		metals: initialMetals,
 		crypto: initialCrypto,
 		cryptoCachedAt: initialCryptoCachedAt,
 		vn100: initialVN100,
+		goldChart: initialGoldChart,
 	})
 
 	// Spinner duration tuned to avg API latency — one full rotation ≈ one fetch

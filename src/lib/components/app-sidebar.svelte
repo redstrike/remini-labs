@@ -46,7 +46,7 @@
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton>
 							{#snippet child({ props })}
-								<a href="/tickers" {...props}>
+								<a href="/tickers" data-sveltekit-preload-code="eager" {...props}>
 									<TrendingUp />
 									<span>Tickers</span>
 								</a>
