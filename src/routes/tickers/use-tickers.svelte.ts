@@ -70,12 +70,16 @@ const CRYPTO_SYMBOLS: Record<CryptoId, CryptoSymbol> = {
 
 interface TickersData {
 	metals: PriceTable | null
+	metalsCachedAt: number // epoch ms from SSR's X-Cached-At; 0 when SSR errored — falls back to Date.now()
 	crypto: CryptoTicker[] | null
-	cryptoCachedAt: number // epoch ms from SSR's X-Cached-At; 0 when SSR errored
+	cryptoCachedAt: number
 	vn100: IndexQuote | null
-	// Streamed from +page.ts. Pending promise on first paint, resolves to the gold 1Y series
-	// once the server's chart fetch settles (or null on failure → falls back to client fetch).
-	goldChart: Promise<ChartData | null> | null
+	vn100CachedAt: number
+	// Streamed from +page.ts. Pending promise on first paint, resolves to {data, cachedAt}
+	// once the server's chart fetch settles (or {null, 0} on failure → falls back to client fetch).
+	// `cachedAt` carries the server's upstream fetch time so the chart's freshness dot anchors
+	// to the honest age, not the SSR render time.
+	goldChart: Promise<{ data: ChartData | null; cachedAt: number }> | null
 }
 
 // Matches server's DEBOUNCE_TTL. An SSR response older than this means the server served
@@ -91,14 +95,16 @@ export function useTickers(initialData: TickersData) {
 	let error = $state<string | null>(null)
 	let selectedSilverIdx = $state(0)
 
-	// Pure data fetch — emits events, no UI state
+	// Pure data fetch — emits events, no UI state. Anchors `lastMetalsFetchedAt` to the
+	// server's `X-Cached-At` (= upstream fetch time T) so the freshness dot reflects honest
+	// data age across visitors, not "moment we received the cached body".
 	async function fetchMetals() {
 		bus.emit('metals:fetching', undefined as void)
 		try {
 			const res = await fetch('/tickers/api/spots/metals')
 			if (res.ok) {
 				priceTable = await res.json()
-				lastMetalsFetchedAt = Date.now()
+				lastMetalsFetchedAt = Number(res.headers.get('X-Cached-At')) || Date.now()
 				error = null
 				bus.emit('metals:fetched', { ok: true })
 				if (chartAsset === 'gold' || chartAsset === 'silver') autoRefreshChart()
@@ -315,7 +321,7 @@ export function useTickers(initialData: TickersData) {
 	// VN100 spot quote + watchlist stock quotes
 	let vn100Quote = $state<IndexQuote | null>(initialData.vn100 ?? null)
 	let stockQuotes = $state<Map<string, StockQuote>>(new Map())
-	let lastStocksFetchedAt = $state(Date.now())
+	let lastStocksFetchedAt = $state(initialData.vn100CachedAt || Date.now())
 
 	function getStockQuote(symbol: string): StockQuote | null {
 		return stockQuotes.get(symbol) ?? null
@@ -327,6 +333,11 @@ export function useTickers(initialData: TickersData) {
 			const res = await fetch(`/tickers/api/spots/stocks?symbol=${STOCK_SYMBOL}`)
 			if (res.ok) {
 				vn100Quote = await res.json()
+				// Anchor the dot to VN100's server cache time — the headline value the dot
+				// most prominently represents. Watchlist quotes update silently; their per-row
+				// freshness isn't surfaced. If VN100 fetch failed, lastStocksFetchedAt stays
+				// at its previous honest value.
+				lastStocksFetchedAt = Number(res.headers.get('X-Cached-At')) || Date.now()
 			}
 
 			// Watchlist stocks — parallel via the cached server route
@@ -345,7 +356,6 @@ export function useTickers(initialData: TickersData) {
 				stockQuotes = newMap
 			}
 
-			lastStocksFetchedAt = Date.now()
 			bus.emit('stocks:fetched', { ok: true })
 			if (chartAsset === 'VN100' || watchlist.stocks.includes(chartAsset)) autoRefreshChart()
 		} catch (e) {
@@ -354,7 +364,7 @@ export function useTickers(initialData: TickersData) {
 		}
 	}
 
-	let lastMetalsFetchedAt = $state(Date.now())
+	let lastMetalsFetchedAt = $state(initialData.metalsCachedAt || Date.now())
 
 	const metalsElapsed = $derived(now - lastMetalsFetchedAt)
 	const cryptoElapsed = $derived(now - lastCryptoFetchedAt)
@@ -477,9 +487,13 @@ export function useTickers(initialData: TickersData) {
 		return entry.data
 	}
 
-	function setCache(asset: ChartAsset, data: ChartData) {
+	// `cachedAt` defaults to local now() when the data path is upstream-direct (crypto charts
+	// hit Binance directly — no proxy header to read). For the proxied paths (metals/stocks),
+	// the caller passes the server's `X-Cached-At` so the chart freshness dot anchors to the
+	// honest data age across visitors, identical to the spot pattern.
+	function setCache(asset: ChartAsset, data: ChartData, cachedAt: number = Date.now()) {
 		now = Date.now()
-		chartCache.set(asset, { data, fetchedAt: now })
+		chartCache.set(asset, { data, fetchedAt: cachedAt })
 	}
 
 	// Load default chart on mount — client only.
@@ -491,8 +505,8 @@ export function useTickers(initialData: TickersData) {
 	$effect(() => {
 		if (!browser) return
 		if (priceTable && !chartData) {
-			Promise.resolve(initialData.goldChart).then((data) => {
-				if (data) setCache('gold', data)
+			Promise.resolve(initialData.goldChart).then((streamed) => {
+				if (streamed?.data) setCache('gold', streamed.data, streamed.cachedAt)
 				if (chartAsset !== 'gold') return
 				fetchChart('gold', chartDuration)
 			})
@@ -531,10 +545,12 @@ export function useTickers(initialData: TickersData) {
 		bus.emit(`chart:${chartSource}:fetching` as const, undefined as void)
 		try {
 			let data: ChartData
+			let cachedAt = Date.now() // crypto chart path leaves this — Binance is direct, no proxy header
 
 			if (isStockChart) {
 				const res = await fetch(`/tickers/api/charts/stocks?symbol=${asset}`)
 				if (!res.ok) throw new Error(`API returned ${res.status}`)
+				cachedAt = Number(res.headers.get('X-Cached-At')) || Date.now()
 				const raw = await res.json()
 				data = { changeRate: raw.changeRate, points: [], candles: raw.candles }
 			} else if (isCryptoChart) {
@@ -549,11 +565,12 @@ export function useTickers(initialData: TickersData) {
 					`/tickers/api/charts/metals?categoryId=${categoryId}&type=${type}&duration=1Y&unit=${unit}`,
 				)
 				if (!res.ok) throw new Error(`API returned ${res.status}`)
+				cachedAt = Number(res.headers.get('X-Cached-At')) || Date.now()
 				data = await res.json()
 			}
 
 			// Always cache the result (useful even if user switched away)
-			setCache(asset, data)
+			setCache(asset, data, cachedAt)
 			// Only update the view if this asset is still the active one
 			if (chartAsset !== asset) return
 			chartData = sliceToWindow(data, duration)

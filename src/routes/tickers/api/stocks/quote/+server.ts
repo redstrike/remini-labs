@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit'
 
 import { fetchStockQuote } from '../../../shared/ssi-iboard-client'
 import { msUntilNextPoll } from '../../../vn-stock-schedule'
+import { probeCache } from '../../cache'
 import type { RequestHandler } from './$types'
 
 const MIN_FRESH_MS = 60 * 1000
@@ -23,16 +24,10 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	const cacheKey = `https://remini-labs.internal/tickers/api/stocks/quote?symbol=${symbol}`
-	const cache = (await globalThis.caches?.open('tickers')) ?? null
 	const { freshMs, staleMs } = computeTtls()
 
-	if (cache) {
-		const cached = await cache.match(cacheKey)
-		if (cached) {
-			const cachedAt = Number(cached.headers.get('X-Cached-At') || 0)
-			if (Date.now() - cachedAt < freshMs) return cached.clone()
-		}
-	}
+	const { debounced, cached, cache } = await probeCache(cacheKey, freshMs)
+	if (debounced) return debounced.clone()
 
 	try {
 		const quote = await fetchStockQuote(symbol)
@@ -49,12 +44,11 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		return response
 	} catch (e) {
-		if (cache) {
-			const stale = await cache.match(cacheKey)
-			if (stale) {
-				const cachedAt = Number(stale.headers.get('X-Cached-At') || 0)
-				if (Date.now() - cachedAt < staleMs) return stale.clone()
-			}
+		// `cached` is the same probe result — body untouched (debounced was null, so the fresh
+		// path didn't consume it). Reuse for stale-on-error within the bounded grace window.
+		if (cached) {
+			const cachedAt = Number(cached.headers.get('X-Cached-At') || 0)
+			if (Date.now() - cachedAt < staleMs) return cached.clone()
 		}
 
 		console.error('SSI iBoard stock quote error:', e)

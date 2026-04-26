@@ -2,15 +2,25 @@ import type { CryptoTicker } from './shared/binance-client'
 import type { ChartData, PriceTable } from './shared/phuquy-client'
 import type { IndexQuote } from './shared/ssi-iboard-client'
 
+// Bundle the gold chart payload with its server-side cache time. Streamed as one deferred
+// chunk so the client seeds its chart cache with the honest age (T from `X-Cached-At`),
+// not the moment SSR happened to render. Same identity as the spot endpoints below.
+type StreamedGoldChart = { data: ChartData | null; cachedAt: number }
+
 export const load = async ({ fetch }) => {
 	// Streamed alongside the spot fetches: the gold chart promise is returned un-awaited so
 	// SvelteKit serializes it as a deferred chunk. The client seeds its chart cache from
 	// `data.goldChart` instead of firing a separate mount fetch — see use-tickers.svelte.ts.
-	const goldChart: Promise<ChartData | null> = fetch(
+	const goldChart: Promise<StreamedGoldChart> = fetch(
 		'/tickers/api/charts/metals?categoryId=1&type=1&duration=1Y&unit=chi',
 	)
-		.then((r) => (r.ok ? r.json() : null))
-		.catch(() => null)
+		.then(async (r) => {
+			if (!r.ok) return { data: null, cachedAt: 0 }
+			const cachedAt = Number(r.headers.get('X-Cached-At')) || Date.now()
+			const data = (await r.json().catch(() => null)) as ChartData | null
+			return { data, cachedAt }
+		})
+		.catch(() => ({ data: null, cachedAt: 0 }))
 
 	// allSettled so one transport-level rejection (DNS/abort/etc.) doesn't nuke the others —
 	// each spot field degrades to null independently. HTTP errors already arrive as
@@ -26,10 +36,14 @@ export const load = async ({ fetch }) => {
 
 	const metals: PriceTable | null = metalsRes?.ok ? await metalsRes.json().catch(() => null) : null
 	const crypto: CryptoTicker[] | null = cryptoRes?.ok ? await cryptoRes.json().catch(() => null) : null
-	// Server stamps X-Cached-At on success (fresh or stale-fallback). 0 means SSR errored —
-	// client treats that as stale and triggers an immediate refetch on mount.
-	const cryptoCachedAt = cryptoRes?.ok ? Number(cryptoRes.headers.get('X-Cached-At') || 0) : 0
 	const vn100: IndexQuote | null = vn100Res?.ok ? await vn100Res.json().catch(() => null) : null
+
+	// Server stamps `X-Cached-At = T` on success (T = upstream fetch time). 0 means SSR errored
+	// — client treats that as "anchor to local now()" and stays honest from there. Per-asset
+	// timestamps let each freshness dot count down from its OWN cache age, not page-load age.
+	const metalsCachedAt = metalsRes?.ok ? Number(metalsRes.headers.get('X-Cached-At') || 0) : 0
+	const cryptoCachedAt = cryptoRes?.ok ? Number(cryptoRes.headers.get('X-Cached-At') || 0) : 0
+	const vn100CachedAt = vn100Res?.ok ? Number(vn100Res.headers.get('X-Cached-At') || 0) : 0
 
 	return {
 		meta: {
@@ -39,9 +53,11 @@ export const load = async ({ fetch }) => {
 			ogImage: '/og-tickers.png',
 		},
 		metals,
+		metalsCachedAt,
 		crypto,
 		cryptoCachedAt,
 		vn100,
+		vn100CachedAt,
 		goldChart,
 	}
 }

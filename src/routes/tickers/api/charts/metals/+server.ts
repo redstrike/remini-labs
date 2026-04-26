@@ -1,9 +1,10 @@
 import { json } from '@sveltejs/kit'
 
 import { fetchChartData } from '../../../shared/phuquy-client'
+import { probeCache } from '../../cache'
 import type { RequestHandler } from './$types'
 
-const DEBOUNCE_TTL = 900 // seconds — matches metals spot cadence
+const DEBOUNCE_TTL_MS = 15 * 60 * 1000 // 15 min — matches metals spot cadence
 
 export const GET: RequestHandler = async ({ url }) => {
 	const categoryId = Number(url.searchParams.get('categoryId'))
@@ -16,21 +17,15 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	const unit = (url.searchParams.get('unit') as 'chi' | 'kg') || 'chi'
 	const cacheKey = `https://remini-labs.internal/tickers/api/charts/metals?categoryId=${categoryId}&type=${type}&duration=${duration}&unit=${unit}`
-	const cache = (await globalThis.caches?.open('tickers')) ?? null
 
-	if (cache) {
-		const cached = await cache.match(cacheKey)
-		if (cached) {
-			const cachedAt = Number(cached.headers.get('X-Cached-At') || 0)
-			if (Date.now() - cachedAt < DEBOUNCE_TTL * 1000) return cached.clone()
-		}
-	}
+	const { debounced, cache } = await probeCache(cacheKey, DEBOUNCE_TTL_MS)
+	if (debounced) return debounced.clone()
 
 	try {
 		const chart = await fetchChartData(categoryId, type, duration, unit)
 		const response = json(chart, {
 			headers: {
-				'Cache-Control': 'public, max-age=900, must-revalidate',
+				'Cache-Control': `public, max-age=${DEBOUNCE_TTL_MS / 1000}, must-revalidate`,
 				'X-Cached-At': String(Date.now()),
 			},
 		})

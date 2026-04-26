@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit'
 
 import { DEFAULT_INDEX_SYMBOL, fetchChart } from '../../../shared/ssi-iboard-client'
 import { msUntilNextPoll } from '../../../vn-stock-schedule'
+import { probeCache } from '../../cache'
 import type { RequestHandler } from './$types'
 
 const MIN_FRESH_MS = 10 * 1000 // debounce floor — dedup rapid-fire requests
@@ -20,16 +21,10 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	const cacheKey = `https://remini-labs.internal/tickers/api/charts/stocks?symbol=${symbol}`
-	const cache = (await globalThis.caches?.open('tickers')) ?? null
 	const freshMs = computeFreshMs()
 
-	if (cache) {
-		const cached = await cache.match(cacheKey)
-		if (cached) {
-			const cachedAt = Number(cached.headers.get('X-Cached-At') || 0)
-			if (Date.now() - cachedAt < freshMs) return cached.clone()
-		}
-	}
+	const { debounced, cache } = await probeCache(cacheKey, freshMs)
+	if (debounced) return debounced.clone()
 
 	try {
 		const chartData = await fetchChart(symbol)

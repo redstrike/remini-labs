@@ -6,7 +6,7 @@ import { probeCache } from '../../cache'
 import type { RequestHandler } from './$types'
 
 const CACHE_KEY = 'https://remini-labs.internal/tickers/api/spots/metals'
-const DEBOUNCE_TTL = 900
+const DEBOUNCE_TTL_MS = 15 * 60 * 1000 // 15 min
 
 // Separate cache key + longer TTL for the VCB USD/VND avg. The USD rate only needs to refresh
 // when VCB publishes new rates (1–3×/day during business hours), not on every metals poll. 1h
@@ -61,7 +61,7 @@ async function getUsdAvgRate(cache: Cache | null): Promise<number | null> {
 }
 
 export const GET: RequestHandler = async () => {
-	const { debounced, cache } = await probeCache(CACHE_KEY, DEBOUNCE_TTL)
+	const { debounced, cache } = await probeCache(CACHE_KEY, DEBOUNCE_TTL_MS)
 	if (debounced) return debounced.clone()
 
 	try {
@@ -88,7 +88,7 @@ export const GET: RequestHandler = async () => {
 		}
 		const response = json(payload, {
 			headers: {
-				'Cache-Control': 'public, max-age=900, must-revalidate',
+				'Cache-Control': `public, max-age=${DEBOUNCE_TTL_MS / 1000}, must-revalidate`,
 				'X-Cached-At': String(Date.now()),
 			},
 		})

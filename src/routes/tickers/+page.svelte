@@ -49,15 +49,19 @@
 	// `goldChart` is a streamed promise from +page.ts; pass it through verbatim so the hook
 	// can await it and seed the chart cache.
 	const initialMetals = page.data.metals ?? null
+	const initialMetalsCachedAt = page.data.metalsCachedAt ?? 0
 	const initialCrypto = page.data.crypto ?? null
 	const initialCryptoCachedAt = page.data.cryptoCachedAt ?? 0
 	const initialVN100 = page.data.vn100 ?? null
+	const initialVN100CachedAt = page.data.vn100CachedAt ?? 0
 	const initialGoldChart = page.data.goldChart ?? null
 	const tickers = useTickers({
 		metals: initialMetals,
+		metalsCachedAt: initialMetalsCachedAt,
 		crypto: initialCrypto,
 		cryptoCachedAt: initialCryptoCachedAt,
 		vn100: initialVN100,
+		vn100CachedAt: initialVN100CachedAt,
 		goldChart: initialGoldChart,
 	})
 
