@@ -1,0 +1,247 @@
+# Runed — AI Agent Reference
+
+> Curated decision-tree reference for Runed primitives, optimized for AI agent consumption.
+> Regenerate auto-sections via `pnpm docs:runed:sync`.
+> For deep API details, WebFetch the source link in the catalog or use `mcp__context7__query-docs` for "/svecosystem/runed".
+
+<!-- @runed-auto:meta -->
+**Source:** github.com/svecosystem/runed @ `main` · commit `a12cd68`
+**Installed locally:** runed@0.37.1 (Runed dev on hold since Dec 2025; `main` ≈ current stable)
+**Fetched:** 2026-04-27
+**Utilities indexed:** 34
+<!-- /@runed-auto:meta -->
+
+## Decision tree — "I need to…"
+
+```
+I NEED TO…
+│
+├─ …debounce / throttle a value
+│   ├─ value lives in component state           → Debounced / Throttled  (class, reactive .current)
+│   └─ callback-style (e.g. input handler)      → useDebounce / useThrottle  (function)
+│
+├─ …persist state across reloads
+│   └─ localStorage / sessionStorage            → PersistedState  (cross-tab sync built in)
+│
+├─ …track DOM element properties reactively
+│   ├─ width/height only                        → ElementSize
+│   ├─ full rect (position + size)              → ElementRect
+│   ├─ scroll position / direction              → ScrollState
+│   ├─ is element in viewport                   → IsInViewport
+│   ├─ is focus inside element                  → IsFocusWithin
+│   └─ auto-grow textarea                       → TextareaAutosize
+│
+├─ …react to a browser global
+│   ├─ document.activeElement                   → activeElement  (singleton)
+│   ├─ document visibility / page hidden        → IsDocumentVisible
+│   ├─ user idle state                          → IsIdle
+│   ├─ keyboard pressed-keys state              → PressedKeys
+│   ├─ component mounted?                       → IsMounted
+│   └─ geolocation                              → useGeolocation
+│
+├─ …wire an event listener with cleanup
+│   ├─ generic addEventListener                 → useEventListener
+│   ├─ IntersectionObserver                     → useIntersectionObserver
+│   ├─ ResizeObserver callback                  → useResizeObserver
+│   ├─ MutationObserver                         → useMutationObserver
+│   └─ click outside a target                   → onClickOutside
+│
+├─ …run a timer
+│   ├─ setInterval with reactive control        → useInterval
+│   └─ requestAnimationFrame with FPS cap       → AnimationFrames
+│
+├─ …manage complex state transitions
+│   ├─ typed state machine                      → FiniteStateMachine
+│   ├─ undo/redo                                → StateHistory
+│   └─ track prev value                         → Previous
+│
+├─ …share typed state across the component tree
+│   └─ setContext/getContext wrapper            → Context
+│
+├─ …fetch async data with loading/error/abort
+│   └─ reactive source + auto-refetch + signal  → resource
+│
+├─ …observe reactive changes explicitly
+│   ├─ explicit deps (vs $effect autotrack)     → watch  (exposes watchOnce + watch.pre)
+│   └─ register cleanup for current effect      → onCleanup
+│
+├─ …render an HTML boolean attribute correctly
+│   └─ presence-truthy attr (data-*, aria-*)    → boolAttr  (returns "" or undefined)
+│
+├─ …author a custom rune that accepts T or `() => T`
+│   └─ coerce MaybeGetter<T> → T                → extract
+│
+└─ …work with URL search params (SvelteKit)
+    └─ type-safe, schema-validated              → runed/kit · useSearchParams
+```
+
+## Catalog
+
+<!-- @runed-auto:catalog -->
+| Primitive | One-liner | Source |
+|---|---|---|
+| `activeElement` | Track and access the currently focused DOM element | [active-element.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/active-element.md) |
+| `AnimationFrames` | A wrapper for requestAnimationFrame with FPS control and frame metrics | [animation-frames.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/animation-frames.md) |
+| `boolAttr` | The boolAttr utility transforms any value into either an empty string ("") or undefined for use with HTML attributes where presence indicates truth. This is essential for creating proper boolean attr… | [bool-attr.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/bool-attr.md) |
+| `Context` | Context allows you to pass data through the component tree without explicitly passing props through every level. It's useful for sharing data that many components need, like themes, authentication st… | [context.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/context.md) |
+| `Debounced` | A wrapper over useDebounce that returns a debounced state. | [debounced.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/debounced.md) |
+| `ElementRect` | Track element dimensions and position reactively | [element-rect.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/element-rect.md) |
+| `ElementSize` | Track element dimensions reactively | [element-size.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/element-size.md) |
+| `extract` | Resolve the value of a getter or static variable | [extract.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/extract.md) |
+| `FiniteStateMachine` | Defines a strongly-typed finite state machine. | [finite-state-machine.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/finite-state-machine.md) |
+| `IsDocumentVisible` | Track whether the current document is visible using the Page Visibility API. | [is-document-visible.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/is-document-visible.md) |
+| `IsFocusWithin` | IsFocusWithin reactively tracks focus state within a container element, updating automatically when focus changes. | [is-focus-within.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/is-focus-within.md) |
+| `IsIdle` | Track if a user is idle and the last time they were active. | [is-idle.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/is-idle.md) |
+| `IsInViewport` | Track if an element is visible within the current viewport. | [is-in-viewport.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/is-in-viewport.md) |
+| `IsMounted` | A class that returns the mounted state of the component it's called in. | [is-mounted.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/is-mounted.md) |
+| `onCleanup` | onCleanup allows you to register a cleanup function that will be called when the current effect context is disposed. This happens when a component is destroyed or when a root effect is disposed. | [on-cleanup.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/on-cleanup.md) |
+| `onClickOutside` | Handle clicks outside of a specified element. | [on-click-outside.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/on-click-outside.md) |
+| `PersistedState` | PersistedState provides a reactive state container that automatically persists data to browser storage and optionally synchronizes changes across browser tabs in real-time. | [persisted-state.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/persisted-state.md) |
+| `PressedKeys` | Tracks which keys are currently pressed | [pressed-keys.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/pressed-keys.md) |
+| `Previous` | A utility that tracks and provides access to the previous value of a reactive getter. | [previous.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/previous.md) |
+| `resource` | Watch for changes and runs async data fetching | [resource.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/resource.md) |
+| `ScrollState` | ScrollState is a reactive utility that lets you: | [scroll-state.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/scroll-state.md) |
+| `StateHistory` | Track state changes with undo/redo capabilities | [state-history.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/state-history.md) |
+| `TextareaAutosize` | Automatically adjust a textarea's height based on its content. | [textarea-autosize.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/textarea-autosize.md) |
+| `Throttled` | A wrapper over useThrottle that returns a throttled state. | [throttled.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/throttled.md) |
+| `useDebounce` | A higher-order function that debounces the execution of a function. | [use-debounce.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/use-debounce.md) |
+| `useEventListener` | A function that attaches an automatically disposed event listener. | [use-event-listener.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/use-event-listener.md) |
+| `useGeolocation` | Reactive access to the browser's Geolocation API. | [use-geolocation.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/use-geolocation.md) |
+| `useIntersectionObserver` | Watch for intersection changes of a target element. | [use-intersection-observer.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/use-intersection-observer.md) |
+| `useInterval` | A wrapper for setInterval with controls for pausing, resuming, and tracking ticks. | [use-interval.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/use-interval.md) |
+| `useMutationObserver` | Observe changes in an element | [use-mutation-observer.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/use-mutation-observer.md) |
+| `useResizeObserver` | Detects changes in the size of an element | [use-resize-observer.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/use-resize-observer.md) |
+| `useSearchParams` | Reactive, schema-validated URL search params for Svelte/SvelteKit | [use-search-params.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/use-search-params.md) |
+| `useThrottle` | A higher-order function that throttles the execution of a function. | [use-throttle.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/use-throttle.md) |
+| `watch` | Watch for changes and run a callback | [watch.md](https://github.com/svecosystem/runed/blob/main/sites/docs/src/content/utilities/watch.md) |
+<!-- /@runed-auto:catalog -->
+
+## Groups (upstream API-shape index)
+
+Within each group, primitives share an instantiation/usage pattern. Use this section as a fallback when the decision tree above doesn't disambiguate.
+
+### A. Reactive State Primitives  · classes that hold state and expose `.current`
+- `Debounced` — debounced reactive value
+- `Throttled` — throttled reactive value
+- `Previous` — last-cycle value
+- `StateHistory` — undo/redo stack over a getter
+- `FiniteStateMachine` — typed FSM with `_enter` hooks and `.debounce()`
+- `Context` — typed setContext/getContext wrapper
+- `PersistedState` — localStorage/sessionStorage backed reactive
+
+### B. Reactivity Helpers  · functions that wire effects/cleanup/derivations
+- `watch` — explicit-deps effect (exposes `watch.pre`, `watchOnce`)
+- `resource` — async data with loading/error/abort/refetch
+- `extract` — coerce `MaybeGetter<T>` → `T` (used when authoring custom runes)
+- `onCleanup` — register cleanup tied to current effect context
+
+### C. Element Observers  · classes that take `() => element` and expose reactive props
+- `ElementRect` — full DOMRect
+- `ElementSize` — width/height (lighter than ElementRect)
+- `ScrollState` — position + direction + isScrolling
+- `TextareaAutosize` — height-fits-content textarea
+- `IsInViewport` — boolean via IntersectionObserver
+- `IsFocusWithin` — boolean (focus inside element?)
+
+### D. Document / Global Sensors  · classes/singletons, no element getter needed
+- `activeElement` — singleton; current focused element
+- `IsDocumentVisible` — Page Visibility API tracker
+- `IsIdle` — configurable idle detection
+- `IsMounted` — has component mounted?
+- `PressedKeys` — currently-held keyboard keys
+
+### E. Event / Observer Wrappers  · functions, imperative, auto-cleanup on unmount
+- `useEventListener` — typed addEventListener
+- `useIntersectionObserver` — callback-style IO
+- `useResizeObserver` — callback-style RO
+- `useMutationObserver` — callback-style MO
+- `onClickOutside` — fires on outside-target click
+- `useDebounce` — function-shape debounce
+- `useThrottle` — function-shape throttle
+- `useInterval` — reactive interval
+- `useGeolocation` — geolocation watcher
+- `AnimationFrames` — RAF loop with FPS cap
+
+### F. SvelteKit  · `runed/kit` subpath
+- `useSearchParams` — schema-validated URL params
+
+### G. DOM helpers  · pure value transforms, no reactivity
+- `boolAttr` — value → `""` or `undefined` for presence-truthy attrs
+
+## Common patterns
+
+A handful of high-leverage idioms. Reach for these instead of hand-rolling.
+
+### Search-as-you-type  · `Debounced` + `AbortSignal`
+```ts
+let query = $state('')
+const debounced = new Debounced(() => query, 300)
+
+$effect(() => {
+  if (!debounced.current) return
+  const ctl = new AbortController()
+  fetch(`/search?q=${encodeURIComponent(debounced.current)}`, { signal: ctl.signal })
+  return () => ctl.abort()
+})
+```
+
+### Versioned `PersistedState` key  · auto-invalidate on schema change
+```ts
+// Bump the suffix when the shape changes; old data is silently replaced
+// by the default instead of crashing on read.
+const ui = new PersistedState('myapp.ui.v2', { open: false }, { storage: 'session' })
+```
+
+### FSM with auto-timeout phase  · `_enter` + `.debounce()`
+```ts
+const fsm = new FiniteStateMachine('idle', {
+  idle:    { fetch: 'loading' },
+  loading: {
+    ok:  'success',
+    err: 'error',
+    _enter: () => fsm.debounce(10_000, 'err'), // hard 10s timeout
+  },
+  success: { reset: 'idle' },
+  error:   { reset: 'idle', fetch: 'loading' },
+})
+```
+
+### Element observer always takes a getter
+```ts
+const size = new ElementSize(() => myEl)  // ✓ reactive when myEl changes
+const size = new ElementSize(myEl)         // ✗ wrong — non-reactive snapshot
+```
+
+### `watch` vs `$effect`  · pick `watch` when…
+- Auto-tracking would pick up too much (e.g. reading a deep object with unrelated reactive bits)
+- You need `(curr, prev)` in the callback signature
+- You want explicit array-of-sources for legibility
+
+## Gotchas
+
+### `FiniteStateMachine.debounce(ms, event)` does NOT auto-cancel on transition
+A scheduled event still fires after the timer elapses, even if the FSM has moved to a different state. The `*` event hits whatever state is current then. Mitigate with a wildcard absorber that returns `fsm.current` (self-transitions are silent — see next gotcha):
+
+```ts
+'*': {
+  on:   () => fsm.current,
+  off:  () => fsm.current,
+  show: () => fsm.current,
+  done: () => fsm.current,
+}
+```
+
+### Self-transitions are silent
+When `newState === currentState`, Runed's internal `#transition` short-circuits before firing `_enter`/`_exit`. Useful for the wildcard absorber above; surprising if you assumed `_enter` re-runs on every send.
+
+### Element observers expect a getter, not a ref
+`new ElementRect(myEl)` is non-reactive; `new ElementRect(() => myEl)` is. Same for `ElementSize`, `ScrollState`, `IsInViewport`, `IsFocusWithin`, `TextareaAutosize`.
+
+### `resource`'s `signal` is per-fetch
+Each refetch creates a fresh AbortController; the previous one is aborted. Don't store `signal` outside the fetcher closure — it'll be stale on the next refetch.
+
+## When the catalog isn't enough
+
+1. WebFetch the source link in the catalog table above
+2. `mcp__context7__query-docs` for "/svecosystem/runed"
+3. Read the upstream repo at github.com/svecosystem/runed

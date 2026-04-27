@@ -13,6 +13,7 @@ pnpm lint:fix         # oxlint --fix (applies fixes, terminal)
 pnpm test:e2e         # Playwright
 pnpm test:scripts     # Vitest integration tests for scripts/ and hooks
 pnpm docs:fetch <url> # cache external docs to docs/.cache/
+pnpm docs:runed:sync  # regen docs/runed/llms.txt from upstream Runed `main`
 ```
 
 ### Code quality after edits
@@ -100,10 +101,16 @@ For documentation lookups about Svelte/SvelteKit, shadcn-svelte, or any external
 2. **MCP docs-retrieval tool second** — any MCP tool whose purpose is to fetch documentation text (e.g. `svelte__get-documentation`, `svelte__list-sections`, or similar tools from other MCP servers that may be available). Use when the cache misses or when you need the freshest version of a specific section.
 3. **Web fetch last** — only if steps 1 and 2 fail or the content isn't documentation.
 
-### Currently cached bulk references
+### Currently cached bulk references (mirrors of upstream — refreshable via `pnpm docs:fetch`)
 
 - **Svelte + SvelteKit full docs:** `docs/.cache/svelte.dev/llms-full.txt` (~1.1 MB, single file containing the entire site). Grep it with targeted patterns instead of reading it whole. This replaces MCP round-trips for common lookups.
 - **shadcn-svelte:** `docs/.cache/shadcn-svelte.com/llms.txt` (index) + any per-component pages cached on demand.
+
+### Currently committed curated references (hand-curated artifacts — regen via dedicated script)
+
+These live in `docs/<lib>/` (committed) rather than `docs/.cache/` because the upstream has no fetchable `llms-full.txt` to mirror. The regen script is the source-of-truth contract.
+
+- **Runed (Svelte 5 utility library):** `docs/runed/llms.txt`. Decision-tree-driven AI-agent reference. Regenerate the auto-sections (catalog table + meta) with `pnpm docs:runed:sync` — the script pulls per-utility markdown from `github.com/svecosystem/runed` on `main`, parses titles + descriptions, and refreshes only the `<!-- @runed-auto:* -->` marker pairs. Hand-curated sections (decision tree, groups index, common patterns, gotchas) are preserved verbatim across regens. Filed under `docs/runed/` (not `docs/.cache/`) because Runed's site is SPA-rendered — `pnpm docs:fetch` can't mirror it.
 
 ### Freshness awareness when reading cached docs
 

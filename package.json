@@ -25,6 +25,7 @@
 		"lint": "oxlint",
 		"lint:fix": "oxlint --fix",
 		"docs:fetch": "node scripts/fetch-docs.mts",
+		"docs:runed:sync": "node scripts/sync-runed-docs.mts",
 		"shadcn-svelte:sync": "node scripts/shadcn-svelte-sync.mts",
 		"gen:brand-assets": "node scripts/gen-brand-assets.mts"
 	},
