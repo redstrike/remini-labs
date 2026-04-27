@@ -1,5 +1,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte'
+	import {
+		ProgressBar,
+		createProgressFSM,
+		isProgressVisible,
+	} from '$lib/components/remini-labs/progress-bar/index.js'
 
 	interface Props {
 		loading: boolean
@@ -9,37 +14,16 @@
 
 	let { loading, accentColor = '#4a9eff', children }: Props = $props()
 
-	// Progress bar lifecycle: loading → completing (100% + fade) → idle
-	let completing = $state(false)
-	let wasLoading = $state(false)
-	let completingTimer: ReturnType<typeof setTimeout> | null = null
-
+	const fsm = createProgressFSM()
 	$effect(() => {
-		if (loading) {
-			wasLoading = true
-			completing = false
-			if (completingTimer) {
-				clearTimeout(completingTimer)
-				completingTimer = null
-			}
-		} else if (wasLoading) {
-			wasLoading = false
-			completing = true
-			if (completingTimer) clearTimeout(completingTimer)
-			completingTimer = setTimeout(() => {
-				completing = false
-				completingTimer = null
-			}, 400)
-		}
+		fsm.send(loading ? 'on' : 'off')
 	})
 
-	const active = $derived(loading || completing)
+	let active = $derived(isProgressVisible(fsm.current))
 </script>
 
 <div class="loading-overlay" class:loading={active}>
-	{#if active}
-		<div class="loading-overlay-progress" class:completing style:background={accentColor}></div>
-	{/if}
+	<ProgressBar phase={fsm.current} {accentColor} />
 	<div class="loading-overlay-content">
 		{@render children()}
 	</div>
@@ -60,50 +44,5 @@
 		opacity: 0.5;
 		filter: blur(2px);
 		pointer-events: none;
-	}
-	.loading-overlay-progress {
-		position: absolute;
-		top: 0;
-		left: 0;
-		height: 1px;
-		z-index: 1;
-		animation: progress-fill 10s cubic-bezier(0.3, 0.8, 0.1, 1) forwards;
-	}
-	.loading-overlay-progress.completing {
-		animation: progress-complete 0.35s ease-in forwards;
-	}
-	@keyframes progress-fill {
-		0% {
-			width: 0;
-		}
-		8% {
-			width: 30%;
-		}
-		25% {
-			width: 55%;
-		}
-		50% {
-			width: 72%;
-		}
-		75% {
-			width: 84%;
-		}
-		100% {
-			width: 96%;
-		}
-	}
-	@keyframes progress-complete {
-		0% {
-			width: 90%;
-			opacity: 1;
-		}
-		60% {
-			width: 100%;
-			opacity: 1;
-		}
-		100% {
-			width: 100%;
-			opacity: 0;
-		}
 	}
 </style>

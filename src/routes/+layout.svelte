@@ -3,6 +3,7 @@
 	import * as Sidebar from '$lib/components/shadcn-svelte/sidebar/index.js'
 	import AppSidebar from '$lib/components/app-sidebar.svelte'
 	import { Button } from '$lib/components/shadcn-svelte/button/index.js'
+	import { NavigationProgress } from '$lib/components/remini-labs/navigation-progress/index.js'
 	import { House } from '@lucide/svelte'
 	import { page } from '$app/state'
 	import { resolve } from '$app/paths'
@@ -98,6 +99,7 @@
 			</div>
 		</header>
 		<main class="relative w-full flex-1 overflow-y-auto bg-background">
+			<NavigationProgress />
 			{@render children()}
 		</main>
 	</Sidebar.Inset>
