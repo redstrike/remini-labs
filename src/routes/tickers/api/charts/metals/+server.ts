@@ -1,3 +1,4 @@
+import { logServerError } from '$lib/server-log'
 import { json } from '@sveltejs/kit'
 
 import { fetchChartData } from '../../../shared/phuquy-client'
@@ -32,7 +33,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		if (cache) await cache.put(cacheKey, response.clone())
 		return response
 	} catch (e) {
-		console.error('Phu Quy chart API error:', e)
+		logServerError('phuquy-chart-error', e, { categoryId, type, duration, unit })
 		return json({ error: 'Unable to fetch chart data' }, { status: 502 })
 	}
 }

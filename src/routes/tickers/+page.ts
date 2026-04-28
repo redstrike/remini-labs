@@ -34,9 +34,14 @@ export const load = async ({ fetch }) => {
 	const cryptoRes = cryptoR.status === 'fulfilled' ? cryptoR.value : null
 	const vn100Res = vn100R.status === 'fulfilled' ? vn100R.value : null
 
-	const metals: PriceTable | null = metalsRes?.ok ? await metalsRes.json().catch(() => null) : null
-	const crypto: CryptoTicker[] | null = cryptoRes?.ok ? await cryptoRes.json().catch(() => null) : null
-	const vn100: IndexQuote | null = vn100Res?.ok ? await vn100Res.json().catch(() => null) : null
+	// Parallel JSON parse — Workers' streaming JSON.parse runs per-response, so awaiting the
+	// three sequentially serializes work that has no data dependency. `Promise.all` resolves
+	// non-thenable `null`s synchronously, so the failed-fetch branches don't add overhead.
+	const [metals, crypto, vn100] = (await Promise.all([
+		metalsRes?.ok ? metalsRes.json().catch(() => null) : null,
+		cryptoRes?.ok ? cryptoRes.json().catch(() => null) : null,
+		vn100Res?.ok ? vn100Res.json().catch(() => null) : null,
+	])) as [PriceTable | null, CryptoTicker[] | null, IndexQuote | null]
 
 	// Server stamps `X-Cached-At = T` on success (T = upstream fetch time). 0 means SSR errored
 	// — client treats that as "anchor to local now()" and stays honest from there. Per-asset

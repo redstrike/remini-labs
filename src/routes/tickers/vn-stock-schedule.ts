@@ -111,3 +111,11 @@ export function computeNextPollTime(now: Date = new Date()): Date {
 export function msUntilNextPoll(now: Date = new Date()): number {
 	return Math.max(0, computeNextPollTime(now).getTime() - now.getTime())
 }
+
+/**
+ * Cache TTL for stock endpoints — the schedule's poll-time floored by `min` so we never cache
+ * shorter than the per-endpoint debounce floor (60s for spots, 10s for charts).
+ */
+export function freshMsForCache(min: number, now: Date = new Date()): number {
+	return Math.max(min, msUntilNextPoll(now))
+}

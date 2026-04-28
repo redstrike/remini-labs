@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { tick } from 'svelte'
+	import { onMount, tick } from 'svelte'
+	import { Debounced } from 'runed'
+
 	import * as Popover from '$lib/components/shadcn-svelte/popover/index.js'
 
 	type CryptoResult = { symbol: string; base: string; quote: string }
@@ -21,16 +23,18 @@
 
 	let query = $state('')
 	let results = $state<Result[]>([])
-	let loading = $state(false)
 	let highlighted = $state(0)
 	let inputEl = $state<HTMLInputElement | null>(null)
 	let listEl = $state<HTMLUListElement | null>(null)
 
-	let debounceTimer: ReturnType<typeof setTimeout> | null = null
-	let abort: AbortController | null = null
+	// Strip "/" so "BNB/BTC" → "BNBBTC" — both forms narrow to the same pair.
+	const cleanQuery = $derived(query.trim().replace(/\//g, ''))
+	const debouncedQuery = new Debounced(() => cleanQuery, DEBOUNCE_MS)
 
-	// Auto-focus on mount
-	$effect(() => {
+	// Auto-focus on mount — runs once. Was a $effect before; onMount makes the one-shot intent
+	// explicit (no reactive deps to track) and matches how every other one-shot mount task in
+	// the codebase is wired.
+	onMount(() => {
 		tick().then(() => inputEl?.focus())
 	})
 
@@ -53,37 +57,29 @@
 		return 'base' in r
 	}
 
-	async function runSearch(q: string) {
-		abort?.abort()
-		const ctl = new AbortController()
-		abort = ctl
-		try {
-			const res = await fetch(`${searchUrl}?q=${encodeURIComponent(q)}`, { signal: ctl.signal })
-			if (!res.ok) throw new Error(`search returned ${res.status}`)
-			const data: Result[] = await res.json()
-			if (ctl.signal.aborted) return
-			results = data
-			highlighted = 0
-		} catch (e) {
-			if ((e as Error).name !== 'AbortError') console.error('ticker-tab-input search failed:', e)
-		} finally {
-			if (!ctl.signal.aborted) loading = false
-		}
-	}
-
-	function onInput() {
-		if (debounceTimer) clearTimeout(debounceTimer)
-		// Strip "/" so "BNB/BTC" → "BNBBTC" — both forms should narrow down to the same pair.
-		const q = query.trim().replace(/\//g, '')
-		if (!q) {
+	// Fire search when the debounced query settles. Auto-aborts the in-flight fetch on
+	// re-trigger (next debounce tick) or component unmount via $effect's cleanup return.
+	$effect(() => {
+		if (!debouncedQuery.current) {
 			results = []
-			loading = false
-			abort?.abort()
 			return
 		}
-		loading = true
-		debounceTimer = setTimeout(() => runSearch(q), DEBOUNCE_MS)
-	}
+		const ctl = new AbortController()
+		fetch(`${searchUrl}?q=${encodeURIComponent(debouncedQuery.current)}`, { signal: ctl.signal })
+			.then((res) => {
+				if (!res.ok) throw new Error(`search returned ${res.status}`)
+				return res.json() as Promise<Result[]>
+			})
+			.then((data) => {
+				if (ctl.signal.aborted) return
+				results = data
+				highlighted = 0
+			})
+			.catch((e) => {
+				if ((e as Error).name !== 'AbortError') console.error('ticker-tab-input search failed:', e)
+			})
+		return () => ctl.abort()
+	})
 
 	function pick(r: Result) {
 		if (has(r.symbol)) return
@@ -128,7 +124,6 @@
 				<input
 					bind:this={inputEl}
 					bind:value={query}
-					oninput={onInput}
 					onkeydown={onKeydown}
 					onclick={(e) => e.stopPropagation()}
 					class="ticker-tab-input"

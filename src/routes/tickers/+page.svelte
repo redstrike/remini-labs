@@ -13,6 +13,7 @@
 	} from './use-tickers.svelte'
 	import { Skeleton } from '$lib/components/shadcn-svelte/skeleton/index.js'
 	import { LoadingOverlay } from '$lib/components/remini-labs/loading-overlay/index.js'
+	import { DEFAULT_PROGRESS_ACCENT } from '$lib/components/remini-labs/progress-bar/index.js'
 	import { FreshnessDot } from '$lib/components/remini-labs/freshness-dot/index.js'
 	import { RefreshCw as SpinnerIcon, TriangleAlert, ChevronDown } from '@lucide/svelte'
 	import { formatCryptoDisplay, splitCryptoSymbol } from './shared/binance-client'
@@ -85,6 +86,11 @@
 		SOL: '#a566cf',
 		VN100: '#b87333',
 	}
+
+	// Volume "compact" formatter (e.g. 168.5M, 12.3K) — module-scope so we don't construct a
+	// fresh Intl.NumberFormat per VN-stock-quote render. Same memoization rationale as
+	// `shared/number-format.ts`.
+	const compactNumberFormat = new Intl.NumberFormat('en-US', { notation: 'compact' })
 
 	const durations = [
 		{ label: '7D', value: '7D' as const },
@@ -207,6 +213,21 @@
 	// being still-empty count against the cap too — ten new-tabs is enough to be drowning in.
 	const cryptoSlotsUsed = $derived(tickers.watchlist.crypto.length + cryptoPlaceholders.length)
 	const stockSlotsUsed = $derived(tickers.watchlist.stocks.length + stockPlaceholders.length)
+
+	// Chart-tab list — fixed metals/crypto/VN100 anchors plus per-watchlist entries. Memoized via
+	// $derived so re-renders unrelated to the watchlist don't rebuild the array (and the
+	// `{#each}` keyed by id can stable-diff on identity).
+	const chartTabs = $derived([
+		{ id: 'gold' as string, label: 'Gold', accent: '#c9a84c' },
+		{ id: 'silver', label: 'Silver', accent: '#8a94a8' },
+		...CRYPTO.map((c) => ({ id: c.id, label: c.id, accent: c.accent })),
+		...tickers.watchlist.crypto.map((s) => {
+			const fmt = formatCryptoDisplay(s)
+			return { id: s, label: fmt.primary + fmt.suffix, accent: brandFor(s) ?? '#6b8aad' }
+		}),
+		{ id: 'VN100', label: 'VN100', accent: '#b87333' },
+		...tickers.watchlist.stocks.map((s) => ({ id: s, label: s, accent: '#b87333' })),
+	])
 
 	// Convert vertical wheel into horizontal scroll on the tab strips. Only intercepts when the
 	// strip actually has overflow — otherwise the page scrolls normally. Skips horizontal-native
@@ -846,9 +867,7 @@
 							<span class="tickers-crypto-range-pair">
 								<span class="tickers-crypto-range-label">Vol</span>
 								<span class="tickers-crypto-range-value"
-									>{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(
-										q.accumulatedVol,
-									)}</span>
+									>{compactNumberFormat.format(q.accumulatedVol)}</span>
 							</span>
 						</div>
 					{:else}
@@ -900,10 +919,7 @@
 			<div class="tickers-chart-header">
 				<div class="tickers-chart-tabs">
 					<div class="tickers-chart-tabs-scroll" onwheel={horizontalWheel}>
-						{#each [{ id: 'gold' as string, label: 'Gold', accent: '#c9a84c' }, { id: 'silver', label: 'Silver', accent: '#8a94a8' }, ...CRYPTO.map( (c) => ({ id: c.id, label: c.id, accent: c.accent }), ), ...tickers.watchlist.crypto.map( (s) => {
-									const fmt = formatCryptoDisplay(s)
-									return { id: s, label: fmt.primary + fmt.suffix, accent: brandFor(s) ?? '#6b8aad' }
-								}, ), { id: 'VN100', label: 'VN100', accent: '#b87333' }, ...tickers.watchlist.stocks.map( (s) => ({ id: s, label: s, accent: '#b87333' }), )] as tab (tab.id)}
+						{#each chartTabs as tab (tab.id)}
 							<button
 								class="tickers-chart-tab"
 								class:active={tickers.chartAsset === tab.id}
@@ -957,7 +973,9 @@
 				</div>
 			</div>
 
-			<LoadingOverlay loading={tickers.chartLoading} accentColor={CHART_ACCENTS[tickers.chartAsset] ?? '#4a9eff'}>
+			<LoadingOverlay
+				loading={tickers.chartLoading}
+				accentColor={CHART_ACCENTS[tickers.chartAsset] ?? DEFAULT_PROGRESS_ACCENT}>
 				<div class="tickers-chart-body">
 					{#if tickers.chartError && !tickers.chartData}
 						<div class="tickers-chart-placeholder">

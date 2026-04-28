@@ -1,3 +1,4 @@
+import { logServerError } from '$lib/server-log'
 import { json } from '@sveltejs/kit'
 
 import { computeDayStats, fetchChartData, fetchPriceTable } from '../../../shared/phuquy-client'
@@ -55,7 +56,7 @@ async function getUsdAvgRate(cache: Cache | null): Promise<number | null> {
 		}
 		return entry.rate
 	} catch (e) {
-		console.error('VCB USD rate fetch failed:', e)
+		logServerError('vcb-usd-rate-error', e)
 		return stale?.rate ?? null
 	}
 }
@@ -99,7 +100,7 @@ export const GET: RequestHandler = async () => {
 
 		return response
 	} catch (e) {
-		console.error('Phu Quy table API error:', e)
+		logServerError('phuquy-table-error', e)
 		return json({ error: 'Unable to fetch prices' }, { status: 502 })
 	}
 }

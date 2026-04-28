@@ -1,16 +1,16 @@
+import { logServerError } from '$lib/server-log'
 import { json } from '@sveltejs/kit'
 
-import { fetchStockQuote } from '../../../shared/ssi-iboard-client'
-import { msUntilNextPoll } from '../../../vn-stock-schedule'
+import { VN_SYMBOL_RE, fetchStockQuote } from '../../../shared/ssi-iboard-client'
+import { freshMsForCache } from '../../../vn-stock-schedule'
 import { probeCache } from '../../cache'
 import type { RequestHandler } from './$types'
 
 const MIN_FRESH_MS = 60 * 1000
 const STALE_GRACE_MS = 5 * 60 * 1000
-const SYMBOL_RE = /^[A-Z0-9]+$/
 
 function computeTtls(): { freshMs: number; staleMs: number } {
-	const freshMs = Math.max(MIN_FRESH_MS, msUntilNextPoll())
+	const freshMs = freshMsForCache(MIN_FRESH_MS)
 	const staleMs = freshMs + STALE_GRACE_MS
 	return { freshMs, staleMs }
 }
@@ -19,7 +19,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const raw = url.searchParams.get('symbol')
 	if (!raw) return json({ error: '?symbol= is required' }, { status: 400 })
 	const symbol = raw.toUpperCase()
-	if (!SYMBOL_RE.test(symbol)) {
+	if (!VN_SYMBOL_RE.test(symbol)) {
 		return json({ error: `Invalid symbol: ${raw}` }, { status: 400 })
 	}
 
@@ -33,7 +33,10 @@ export const GET: RequestHandler = async ({ url }) => {
 		const quote = await fetchStockQuote(symbol)
 		const response = json(quote, {
 			headers: {
-				'Cache-Control': `private, max-age=${Math.floor(freshMs / 1000)}`,
+				// `private` silently blocks `cache.put` on Workers Cache + the project polyfill
+				// (see reference_workers_cache_api_gotchas.md). Match the sibling spots/charts
+				// pattern so the cache.put below + stale-on-error fallback at the bottom both work.
+				'Cache-Control': `public, max-age=${Math.floor(freshMs / 1000)}, must-revalidate`,
 				'X-Cached-At': String(Date.now()),
 			},
 		})
@@ -51,7 +54,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			if (Date.now() - cachedAt < staleMs) return cached.clone()
 		}
 
-		console.error('SSI iBoard stock quote error:', e)
+		logServerError('ssi-iboard-stock-quote-error', e, { symbol })
 		return json({ error: `Unable to fetch ${symbol} quote` }, { status: 502 })
 	}
 }

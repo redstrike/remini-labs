@@ -1,3 +1,4 @@
+import { logServerError } from '$lib/server-log'
 import { error, json } from '@sveltejs/kit'
 
 import { fetchCryptoDict, searchCryptoDict, type CryptoDict } from '../../../shared/binance-client'
@@ -38,7 +39,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			// Stale: serve current dict immediately, refresh in the background.
 			if (age >= FRESH_MS && platform?.context?.waitUntil) {
 				platform.context.waitUntil(
-					buildAndStore(cache).catch((e) => console.error('crypto dict refresh failed:', e)),
+					buildAndStore(cache).catch((e) => logServerError('crypto-dict-refresh-error', e)),
 				)
 			}
 		}
@@ -49,7 +50,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		try {
 			dict = await buildAndStore(cache)
 		} catch (e) {
-			console.error('Binance exchangeInfo error:', e)
+			logServerError('binance-exchangeinfo-error', e)
 			error(502, 'crypto symbol dict unavailable')
 		}
 	}

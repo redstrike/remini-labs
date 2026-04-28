@@ -1,3 +1,4 @@
+import { logServerError } from '$lib/server-log'
 import { error, json } from '@sveltejs/kit'
 
 import { fetchStockList, searchStocks, type StockInfo } from '../../../shared/ssi-iboard-client'
@@ -50,7 +51,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			const age = Date.now() - Number(cached.headers.get('X-Cached-At') || 0)
 			if (age >= FRESH_MS && platform?.context?.waitUntil) {
 				platform.context.waitUntil(
-					buildAndStore(cache).catch((e) => console.error('stock dict refresh failed:', e)),
+					buildAndStore(cache).catch((e) => logServerError('stock-dict-refresh-error', e)),
 				)
 			}
 		}
@@ -61,7 +62,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		try {
 			list = await buildAndStore(cache)
 		} catch (e) {
-			console.error('SSI iBoard stock-info error:', e)
+			logServerError('ssi-iboard-stock-info-error', e)
 			error(502, 'stock symbol dict unavailable')
 		}
 	}

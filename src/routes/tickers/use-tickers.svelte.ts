@@ -785,11 +785,17 @@ export const STOCK_FORMATTER = {
 const STABLECOIN_QUOTES = new Set(['USDT', 'USDC', 'FDUSD', 'TUSD', 'BUSD', 'DAI'])
 
 export function formatCryptoPrice(value: number, quote: string): string {
-	if (STABLECOIN_QUOTES.has(quote)) return formatUSDT(value)
+	// Special-case zero so stablecoin pairs render `$0.00` (cash convention) instead of
+	// `$0.00000000` — the tiered ladder defaults to 8dp at the bottom because abs=0 falls
+	// through every threshold. Non-stablecoin zero stays `'0'`: a zero-priced raw pair
+	// wants the most compact form, not eight zeros.
+	if (STABLECOIN_QUOTES.has(quote)) return value === 0 ? '$0.00' : formatUSDT(value)
 	if (value === 0) return '0'
 	return formatTiered(value)
 }
 
+const stockFmt = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 })
+
 export function formatStockPrice(value: number): string {
-	return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value)
+	return stockFmt.format(value)
 }

@@ -1,3 +1,4 @@
+import { logServerError } from '$lib/server-log'
 import { error, json } from '@sveltejs/kit'
 
 import { fetchCryptoTickers } from '../../../shared/binance-client'
@@ -22,7 +23,7 @@ export const GET: RequestHandler = async () => {
 		if (cache) await cache.put(CACHE_KEY, response.clone())
 		return response
 	} catch (e) {
-		console.error('Binance ticker API error:', e)
+		logServerError('binance-ticker-error', e)
 		error(502, 'crypto upstream unavailable')
 	}
 }
