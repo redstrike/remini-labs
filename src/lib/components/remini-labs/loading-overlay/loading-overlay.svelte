@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte'
 	import {
+		DEFAULT_PROGRESS_ACCENT,
 		ProgressBar,
 		createProgressFSM,
 		isProgressVisible,
@@ -12,14 +13,14 @@
 		children: Snippet
 	}
 
-	let { loading, accentColor = '#4a9eff', children }: Props = $props()
+	let { loading, accentColor = DEFAULT_PROGRESS_ACCENT, children }: Props = $props()
 
 	const fsm = createProgressFSM()
 	$effect(() => {
 		fsm.send(loading ? 'on' : 'off')
 	})
 
-	let active = $derived(isProgressVisible(fsm.current))
+	const active = $derived(isProgressVisible(fsm.current))
 </script>
 
 <div class="loading-overlay" class:loading={active}>

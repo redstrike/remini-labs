@@ -19,15 +19,18 @@
 
 	type ViewMode = 'phone' | 'tablet' | 'laptop'
 
-	function detectViewMode(): ViewMode {
-		if (!browser) return 'laptop'
-		const w = window.innerWidth
-		if (w < 720) return 'phone'
-		if (w < 1280) return 'tablet'
-		return 'laptop'
-	}
+	// SSR-safe default; detected once after hydration. Manual buttons take over from there —
+	// no resize tracking, since the buttons are an explicit preview override that shouldn't
+	// snap back when the user happens to resize their actual viewport.
+	let viewMode = $state<ViewMode>('laptop')
 
-	let viewMode = $state<ViewMode>(detectViewMode())
+	$effect(() => {
+		if (!browser) return
+		const w = window.innerWidth
+		if (w < 720) viewMode = 'phone'
+		else if (w < 1280) viewMode = 'tablet'
+		else viewMode = 'laptop'
+	})
 
 	const viewWidths: Record<ViewMode, string> = {
 		phone: '360px',

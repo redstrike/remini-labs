@@ -146,16 +146,11 @@ interface PhuQuyChartEntry {
 // Use global fetch for external API calls. SvelteKit's event.fetch adds Origin headers
 // that can trigger CORS 403 rejections from third-party APIs.
 function withTimeout(url: string, init?: RequestInit): Promise<Response> {
-	const controller = new AbortController()
-	const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-
-	return globalThis
-		.fetch(url, {
-			...init,
-			signal: controller.signal,
-			headers: { ...HEADERS, ...init?.headers },
-		})
-		.finally(() => clearTimeout(timeout))
+	return globalThis.fetch(url, {
+		...init,
+		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+		headers: { ...HEADERS, ...init?.headers },
+	})
 }
 
 function normalizeUnit(type: number, unitOfMeasure: string | null): string {

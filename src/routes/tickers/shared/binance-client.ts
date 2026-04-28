@@ -65,16 +65,11 @@ type BinanceKline = [number, string, string, string, string, string, number, str
 // --- Fetch helpers ---
 
 function withTimeout(url: string, init?: RequestInit): Promise<Response> {
-	const controller = new AbortController()
-	const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-
-	return globalThis
-		.fetch(url, {
-			...init,
-			signal: controller.signal,
-			headers: { ...HEADERS, ...init?.headers },
-		})
-		.finally(() => clearTimeout(timeout))
+	return globalThis.fetch(url, {
+		...init,
+		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+		headers: { ...HEADERS, ...init?.headers },
+	})
 }
 
 // 403/451 = CF egress block signature from Binance's edge. 429/5xx are Binance-side and
@@ -83,10 +78,13 @@ function isBlockStatus(status: number): boolean {
 	return status === 403 || status === 451
 }
 
-// AbortError = our timeout tripped; TypeError = Workers fetch surfaced a network failure.
-// Either means this mirror is effectively unreachable right now — try the other.
+// TimeoutError = AbortSignal.timeout tripped; AbortError = caller-aborted; TypeError = Workers
+// fetch surfaced a network failure. Any of these means this mirror is effectively unreachable
+// right now — try the other.
 function isNetworkBlock(err: unknown): boolean {
-	return err instanceof Error && (err.name === 'AbortError' || err.name === 'TypeError')
+	return (
+		err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError' || err.name === 'TypeError')
+	)
 }
 
 async function binanceFetch(path: string): Promise<Response> {

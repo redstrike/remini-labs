@@ -68,10 +68,12 @@ export async function initClockSync() {
 async function syncOnce(): Promise<boolean> {
 	try {
 		const t1 = _origPerfNow()
-		const res = await fetch('/api/clock')
+		const res = await fetch('/api/clock', { signal: AbortSignal.timeout(5000) })
 		const t3 = _origPerfNow()
 		if (!res.ok) return false
 		const { serverTime: t2 } = await res.json()
+		// Reject malformed payloads — patching with NaN/undefined poisons every Date.now() consumer.
+		if (typeof t2 !== 'number' || !Number.isFinite(t2)) return false
 		// Assume symmetric latency: server wrote t2 at the midpoint of the round-trip.
 		serverAnchor = t2
 		perfAnchor = (t1 + t3) / 2

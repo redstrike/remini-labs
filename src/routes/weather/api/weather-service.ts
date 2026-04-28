@@ -10,11 +10,11 @@ export interface IpLocationResponse {
 export function getCloudflareIpLocation(cf?: App.Platform['cf']): IpLocationResponse | null {
 	if (cf && cf.latitude && cf.longitude) {
 		return {
-			lat: parseFloat(cf.latitude as string),
-			lng: parseFloat(cf.longitude as string),
-			city: (cf.city as string) || '',
-			country: (cf.country as string) || '',
-			isp: (cf.asOrganization as string) || '',
+			lat: parseFloat(cf.latitude),
+			lng: parseFloat(cf.longitude),
+			city: cf.city || '',
+			country: cf.country || '',
+			isp: cf.asOrganization || '',
 		}
 	}
 	return null
@@ -59,7 +59,11 @@ export async function fetchServerReverseGeocode(
 		throw new Error('lat and lng query params are required')
 	}
 
-	const res = await fetchFn(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
+	const url = new URL('https://nominatim.openstreetmap.org/reverse')
+	url.searchParams.set('lat', lat)
+	url.searchParams.set('lon', lng)
+	url.searchParams.set('format', 'json')
+	const res = await fetchFn(url, {
 		headers: {
 			// Nominatim usage policy requires a descriptive User-Agent
 			'User-Agent': 'ReminiLabs/1.0 (Weather Agent)',

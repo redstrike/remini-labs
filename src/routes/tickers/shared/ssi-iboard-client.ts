@@ -16,6 +16,9 @@ const FETCH_TIMEOUT_MS = 5000
 /** Pinned default — VN100 is today's opinionated "VN market glance" index. */
 export const DEFAULT_INDEX_SYMBOL = 'VN100'
 
+/** SSI symbol shape — uppercase alphanumeric (e.g. VN100, VNINDEX, FPT). */
+export const VN_SYMBOL_RE = /^[A-Z0-9]+$/
+
 // --- Types ---
 
 /** Index quote from /exchange-index/{ID} — breadth counts + session aggregates. Index-only endpoint. */
@@ -156,16 +159,11 @@ interface UdfBars {
 // --- Fetch helper ---
 
 function withTimeout(url: string, init?: RequestInit): Promise<Response> {
-	const controller = new AbortController()
-	const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-
-	return globalThis
-		.fetch(url, {
-			...init,
-			signal: controller.signal,
-			headers: { ...HEADERS, ...init?.headers },
-		})
-		.finally(() => clearTimeout(timeout))
+	return globalThis.fetch(url, {
+		...init,
+		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+		headers: { ...HEADERS, ...init?.headers },
+	})
 }
 
 async function unwrap<T>(res: Response, label: string): Promise<T> {
