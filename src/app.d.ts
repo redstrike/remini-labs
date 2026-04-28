@@ -29,14 +29,10 @@ declare global {
 			env?: Env
 			context?: ExecutionContext
 			caches?: CacheStorage & { default: Cache }
-			cf?: IncomingRequestCfProperties & {
-				city?: string
-				country?: string
-				latitude?: string
-				longitude?: string
-				asOrganization?: string
-				[key: string]: any
-			}
+			// `IncomingRequestCfProperties` already types city / country / latitude / longitude /
+			// asOrganization (and every other CF-populated field). The previous `[key: string]: any`
+			// index signature defeated type safety on every property access — dropped.
+			cf?: IncomingRequestCfProperties
 		}
 	}
 }

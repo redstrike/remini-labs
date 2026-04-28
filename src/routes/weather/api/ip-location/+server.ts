@@ -15,7 +15,7 @@ export const GET: RequestHandler = async (event) => {
 		const clientIp = event.getClientAddress()
 		const data = await fetchServerIpLocation(event.fetch, clientIp)
 		return json(data)
-	} catch (e: any) {
-		error(502, e.message)
+	} catch (e) {
+		error(502, e instanceof Error ? e.message : String(e))
 	}
 }

@@ -25,7 +25,9 @@
 		const elapsedSec = Math.floor(elapsed / 1000)
 		const ttlSec = Math.floor(ttl / 1000)
 		const remainingSec = Math.max(0, ttlSec - elapsedSec)
-		const freshPercent = Math.round((1 - elapsed / ttl) * 100)
+		// Guard against `ttl = 0` — division would produce `Infinity`/`NaN` and the debug text
+		// would render `-Infinity%`. With no freshness window there's nothing to count down.
+		const freshPercent = ttl > 0 ? Math.round((1 - elapsed / ttl) * 100) : 0
 		return `${elapsedSec}s/${ttlSec}s (${freshPercent}%) · refresh in ${remainingSec}s`
 	})
 </script>

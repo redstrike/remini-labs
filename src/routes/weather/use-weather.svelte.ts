@@ -44,7 +44,7 @@ async function saveGeocode(
 	// LRU eviction — keep only the N most recently accessed entries
 	const keys = Object.keys(dict)
 	if (keys.length > GEOCODE_MAX_ENTRIES) {
-		const sorted = keys.sort((a, b) => dict[a].lastAccessedAt - dict[b].lastAccessedAt)
+		const sorted = keys.toSorted((a, b) => dict[a].lastAccessedAt - dict[b].lastAccessedAt)
 		for (const k of sorted.slice(0, keys.length - GEOCODE_MAX_ENTRIES)) delete dict[k]
 	}
 
@@ -54,7 +54,17 @@ async function saveGeocode(
 // --- Hook / State Module ---
 
 export interface UseWeatherOptions {
-	/** Use SvelteKit experimental remote functions instead of REST API endpoints. */
+	/**
+	 * Use SvelteKit experimental remote functions instead of REST API endpoints.
+	 *
+	 * Both paths are intentionally maintained as a permanent A/B toggle: the REST `+server.ts`
+	 * endpoints (`/weather/api/ip-location` and `/weather/api/reverse-geocode`) live alongside
+	 * the `weather.remote.ts` query() functions (`getIpLocationRemote` / `getReverseGeocodeRemote`)
+	 * so either runtime model can be exercised against real upstream traffic during the
+	 * SvelteKit remote-functions experimental window. The duplication is the design — drop one
+	 * path only when remote functions exit experimental AND a single-path migration is explicitly
+	 * desired.
+	 */
 	useRemoteFns?: boolean
 }
 
@@ -69,47 +79,72 @@ export function useWeather({ useRemoteFns = false }: UseWeatherOptions = {}) {
 	let ipIsp = $state<string>('') // ISP name from IP geolocation
 	let gpsCity = $state<string>('') // reverse-geocoded label for GPS location
 
-	onMount(async () => {
-		// Hydrate from cache first — if fresh, we can skip the network entirely.
-		// getCachedItem auto-removes expired entries so we never see stale data.
-		const cached = await weatherCache.get()
-		if (cached) {
-			liveWeather = { lat: cached.lat, lng: cached.lng, timestamp: cached.fetchedAt, weather: cached.weather }
-			gpsCity = cached.gpsCity ?? ''
-			isApproxLocation = cached.isApproxLocation
-			ipCity = cached.ipCity ?? null
-			ipIsp = cached.ipIsp ?? ''
-			loadingState = 'idle'
-		}
+	// Single lifecycle abort signal for every async path inside the hook (onMount IIFE,
+	// reverseGeocode, future async). Triggered from onMount cleanup. Downstream awaits check
+	// `signal.aborted` before mutating reactive state, and pass the signal to `fetch` to also
+	// cancel in-flight HTTP. Replaces the per-path `unmounted` boolean — single source of truth.
+	const lifecycleAbort = new AbortController()
 
-		if ('permissions' in navigator) {
-			try {
-				const status = await navigator.permissions.query({ name: 'geolocation' })
-				permissionState = status.state
-
-				// Reactively update permission state if user changes it in browser settings
-				status.onchange = () => {
-					permissionState = status.state
-					if (status.state === 'granted') {
-						isApproxLocation = false
-						ipCity = null
-						ipIsp = ''
-						gpsCity = ''
-						requestLocation()
-					}
-				}
-			} catch {
-				permissionState = 'unknown'
+	// Sync `onMount` body with an async IIFE inside, so we can RETURN a cleanup function:
+	// async functions return Promises, which Svelte ignores (only `typeof === 'function'` is
+	// treated as cleanup). Wrapping the async work lets us also detach the PermissionStatus
+	// `change` listener on unmount instead of leaking it across remounts.
+	onMount(() => {
+		const { signal } = lifecycleAbort
+		let permissionStatus: PermissionStatus | null = null
+		const onPermissionChange = () => {
+			if (!permissionStatus || signal.aborted) return
+			permissionState = permissionStatus.state
+			if (permissionStatus.state === 'granted') {
+				isApproxLocation = false
+				ipCity = null
+				ipIsp = ''
+				gpsCity = ''
+				requestLocation()
 			}
 		}
 
-		// If we hydrated from fresh cache, don't re-fetch. Otherwise run the full flow.
-		if (cached) return
+		void (async () => {
+			// Hydrate from cache first — if fresh, we can skip the network entirely.
+			// getCachedItem auto-removes expired entries so we never see stale data.
+			const cached = await weatherCache.get()
+			if (signal.aborted) return
+			if (cached) {
+				liveWeather = { lat: cached.lat, lng: cached.lng, timestamp: cached.fetchedAt, weather: cached.weather }
+				gpsCity = cached.gpsCity ?? ''
+				isApproxLocation = cached.isApproxLocation
+				ipCity = cached.ipCity ?? null
+				ipIsp = cached.ipIsp ?? ''
+				loadingState = 'idle'
+			}
 
-		if (permissionState === 'denied') {
-			await requestIpLocationFallback()
-		} else {
-			await requestLocation()
+			if ('permissions' in navigator) {
+				try {
+					const status = await navigator.permissions.query({ name: 'geolocation' })
+					if (signal.aborted) return
+					permissionStatus = status
+					permissionState = status.state
+					// Reactively update permission state if user changes it in browser settings
+					status.addEventListener('change', onPermissionChange)
+				} catch {
+					permissionState = 'unknown'
+				}
+			}
+
+			// If we hydrated from fresh cache, don't re-fetch. Otherwise run the full flow.
+			if (cached) return
+			if (signal.aborted) return
+
+			if (permissionState === 'denied') {
+				await requestIpLocationFallback()
+			} else {
+				await requestLocation()
+			}
+		})()
+
+		return () => {
+			lifecycleAbort.abort()
+			permissionStatus?.removeEventListener('change', onPermissionChange)
 		}
 	})
 
@@ -164,7 +199,7 @@ export function useWeather({ useRemoteFns = false }: UseWeatherOptions = {}) {
 			// a proper "Ward, District, City" label instead of just the coarse IP city.
 			reverseGeocode(ipLocation.lat, ipLocation.lng)
 			await fetchWeatherData(ipLocation.lat, ipLocation.lng)
-		} catch (e: any) {
+		} catch (e) {
 			console.error('IP location fallback failed:', e)
 			locationError = 'Could not determine your location. Please enable GPS or try again later.'
 			loadingState = 'idle'
@@ -174,9 +209,17 @@ export function useWeather({ useRemoteFns = false }: UseWeatherOptions = {}) {
 	// Reverse geocode GPS coordinates in the background — sets gpsCity, never blocks weather load.
 	// Uses the persistent LRU geocode dict (weather.geocodes.cache) to skip the network when
 	// the user is in a previously-visited area.
+	//
+	// Fire-and-forget by design (caller doesn't await), so every state mutation past an `await`
+	// must check `lifecycleAbort.signal.aborted` before writing — otherwise a navigation
+	// mid-flight resumes the resolved promise on a torn-down component (writes to dead $state +
+	// wasted localStorage writes from saveGeocode/persistCache).
 	async function reverseGeocode(lat: number, lng: number) {
+		const { signal } = lifecycleAbort
+
 		// Fast path: cached geocode for this rounded coordinate
 		const cached = await lookupGeocode(lat, lng)
+		if (signal.aborted) return
 		if (cached) {
 			gpsCity = cached.label
 			await persistCache()
@@ -188,12 +231,17 @@ export function useWeather({ useRemoteFns = false }: UseWeatherOptions = {}) {
 			if (useRemoteFns) {
 				// Outside a reactive context (.svelte.ts), `await query(...)` throws
 				// "not created in a reactive context". Use `.run()` for one-shot fetch.
+				// `.run()` doesn't accept a signal, so abort-handling is post-await only.
 				// https://svelte.dev/docs/kit/remote-functions#query
 				data = await getReverseGeocodeRemote({ lat, lng }).run()
+				if (signal.aborted) return
 			} else {
-				const res = await fetch(`/weather/api/reverse-geocode?lat=${lat}&lng=${lng}`)
+				// Pass the lifecycle signal to fetch — cancels the in-flight HTTP request on
+				// unmount. The thrown AbortError is caught + swallowed below.
+				const res = await fetch(`/weather/api/reverse-geocode?lat=${lat}&lng=${lng}`, { signal })
 				if (!res.ok) return
 				data = await res.json()
+				if (signal.aborted) return
 			}
 			// Two-token label, most-specific first: "Ward, District" → "District, City" → "City, Country"
 			const label = buildLocationLabel(data)
@@ -202,7 +250,9 @@ export function useWeather({ useRemoteFns = false }: UseWeatherOptions = {}) {
 			await saveGeocode(lat, lng, { ...data, label })
 			await persistCache()
 		} catch (e) {
-			// City label is a bonus, not critical — log so future regressions are visible
+			// AbortError = lifecycle abort fired (component unmount); silent. Anything else =
+			// real failure worth surfacing. City label is a bonus, not critical.
+			if (e instanceof Error && e.name === 'AbortError') return
 			console.error('reverseGeocode failed:', e)
 		}
 	}
@@ -222,14 +272,16 @@ export function useWeather({ useRemoteFns = false }: UseWeatherOptions = {}) {
 			// Fire reverse geocoding in the background — doesn't block weather loading
 			reverseGeocode(latitude, longitude)
 			await fetchWeatherData(latitude, longitude)
-		} catch (error: any) {
-			console.error('Geolocation error:', error)
+		} catch (e) {
+			console.error('Geolocation error:', e)
 
-			if (permissionState === 'denied' || error?.code === 1 /* PERMISSION_DENIED */) {
+			const code = e instanceof GeolocationPositionError ? e.code : 0
+			if (permissionState === 'denied' || code === 1 /* PERMISSION_DENIED */) {
 				permissionState = 'denied'
 				await requestIpLocationFallback()
 			} else {
-				locationError = error?.message || 'Please allow location access to see your local weather.'
+				locationError =
+					(e instanceof Error && e.message) || 'Please allow location access to see your local weather.'
 				loadingState = 'idle'
 			}
 		}
@@ -259,9 +311,6 @@ export function useWeather({ useRemoteFns = false }: UseWeatherOptions = {}) {
 		},
 		get displayWeather() {
 			return liveWeather
-		},
-		get isUpdatingInBg() {
-			return false
 		},
 		get relativeTime() {
 			if (!liveWeather) return ''

@@ -30,7 +30,11 @@ export function createEventBus<Events extends Record<string, unknown>>() {
 		const set = getOrCreate(event)
 		set.add(handler as Handler)
 
-		if (set.size > MAX_LISTENERS) {
+		// Warn exactly when crossing the threshold, not on every subsequent `on()` call past it.
+		// Standard Node EventEmitter convention — a real leak would otherwise flood the console
+		// with one warning per add. If listeners drop back below and rise again, the warning
+		// re-fires (intentional: that's a fresh growth event worth surfacing).
+		if (set.size === MAX_LISTENERS + 1) {
 			console.warn(`[event-bus] "${String(event)}" has ${set.size} listeners — possible leak`)
 		}
 
