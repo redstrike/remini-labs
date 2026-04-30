@@ -63,7 +63,7 @@ Specific size/weight assignments per data role. References the shell text scale.
 - **Max content width:** 860px (responsive: single column on mobile, two-column cards at 640px+)
 - **Card padding:** 20px (off-scale exception — tickers convention)
 - **Card gap:** `--rl-space-md` (16px)
-- **Cards grid `align-items: start`:** each spot card sizes to its own content; expanding one card (e.g. the VCB Forex 19rem-max table) no longer stretches its row-sibling. `min-height: 215px` on `.tickers-card` still floors any empty-body state (new-tab placeholder).
+- **Cards grid `align-items: start`:** each spot card sizes to its own content; expanding one card (e.g. the VCB Forex 19rem-max table) no longer stretches its row-sibling. `min-height: 215px` on the base `.tickers-card` rule still floors any empty-body state (new-tab placeholder) for the VN100 card. **The dashboard's top-row pair (Bullion + Binance) is hard-capped at `20rem` (320px)** via `.tickers-cards > .tickers-card:nth-child(-n + 2) { height: 20rem; display: flex; flex-direction: column }`. The flex-column layout lets the body slot (last child) absorb leftover space — Binance's scroll container fills via `flex: 1; min-height: 0`, Bullion's groups stack from the top with a tiny tail of empty space below the footer-note. The cap targets the first two children of `.tickers-cards` only, leaving the standalone VN100 card (3rd sibling) at its natural content-driven height.
 - **Container padding:** `--rl-space-lg` `--rl-space-md` (24px vertical, 16px horizontal)
 - **Chart section (mobile ≤639px):** Full viewport width via negative margins (`calc(-1 * var(--rl-space-md))`), 10px internal padding, no border-radius, no side borders
 - **Chart section header:** Two rows — asset tabs with freshness dot + refresh button (row 1, bg `--rl-color-surface` with bottom border), Candle + Interval controls (row 2, bg `--rl-color-chart-bg`)
@@ -115,6 +115,47 @@ Tapping Gold or Silver reveals a scrollable sub-panel inside the same card — c
 - **Value hierarchy:** AVG headlined (same bright-bold as Bullion's AVG), BUY/SELL muted.
 - **Flat → `—`** via `formatDelta` (`'unknown'` when snapshots are stale / yesterday missing); `0.00%` reserved for genuine post-publish flat days.
 
+### Crypto spots card (Binance — BTC / ETH / SOL + watchlist)
+
+Single consolidated card titled **Binance** (Binance brand yellow `#F0B90B` accents the active tab). The card body is one grid: rows 1–3 are the fixed BTC/ETH/SOL majors, rows 4..N are the user's watchlist symbols (cap 10 total per `use-watchlist.svelte.ts`), and the final row is a permanent ticker-input field for adding the next symbol. All data rows share a single batched Binance fetch.
+
+The header strip carries `[Binance]` plus a `[+]` button. **The `[+]` is reserved for opening blank tabs** (per-exchange views, custom panels — future use cases). Clicking `[+]` creates a `Tab N` placeholder; clicking on a placeholder switches the body to a "content coming soon" state. **Adding watchlist symbols does NOT use `[+]`** — it's done by typing into the permanent input row at the table bottom.
+
+#### 7-column grid
+
+```
+14px | minmax(2.25rem, auto) | 1fr  | 1fr  | 1fr  | 1fr  | 16px
+dot    symbol                  Low    High   Price  24H    ×
+```
+
+`column-gap: 10px`, `row-gap: 12px`. **Col 1 (14px)** is just enough for the 10px brand dot with a 4px breathing strip on the right — diverges from Forex's 22px ingot column on purpose: dots are smaller than flags, so the wider track left dead space. Shrinking it lets the dot and the input row's `+` glyph land at the same left edge AND donates ~8px (split as ~2px each) to the four numeric `1fr` columns for breathing room. **Col 7 (16px)** is a dedicated × column populated only on watchlist rows; fixed rows leave it empty — the always-visible × is a discoverability win that justifies the asymmetric 7th track.
+
+#### Top header
+
+Mirrors the Bullion / VCB Forex pattern — column labels (`Low · High · Price · 24H`) sit above the data rows, styled via `.tickers-table-header` + `.tickers-table-col-label` (uppercase, `--rl-text-2xs`, 0.5px tracking, muted, 1px bottom border). The header is a subgrid child (`grid-column: 1 / -1; grid-template-columns: subgrid`) so labels align pixel-perfect with the columns below.
+
+#### Row content
+
+- **Brand dot** (col 1) — 10px circle in the asset's brand color, **left-aligned** (`justify-self: start`) so it lines up vertically with the input row's `+` glyph below. Fixed rows use `CRYPTO[i].accent` (BTC orange, ETH blue, SOL purple). Watchlist rows look up `BRAND_COLORS[base]` via `brandFor(symbol)`, falling back to `#6b8aad` for unknown bases.
+- **Symbol** (col 2) — mono semibold. Fixed rows show the bare ticker (`BTC`). Watchlist rows render `formatCryptoDisplay(symbol).primary` plus a smaller, muted `/QUOTE` suffix (e.g. `ETH /BTC`) — the pair reads as one token, the suffix disambiguates non-USDT quotes without crowding the numeric cells.
+- **Low / High** (cols 3–4) — `--rl-text-sm` mono semibold, muted (`--rl-color-text-subtle`). Right-aligned. Per-quote formatting via `formatUSDT` (fixed) or `formatCryptoPrice(value, quote)` (watchlist).
+- **Price** (col 5) — `--rl-text-md` mono bold, `--rl-color-text`. The headline cell, typographically promoted above Low/High so the rightmost numeric anchor reads first at a glance. Right-aligned.
+- **24H** (col 6) — `--rl-text-sm` mono semibold, signed and colored via `.up` / `.down` (green / red). Formatted by `formatPctSigned` — returns `'—'` when `Math.abs(pct) < 0.005` so flat moves don't render a misleading `0.00%`.
+- **×** (col 7, watchlist only) — `--rl-text-md` mono, faint at rest, brightens on hover with a subtle surface-raised background. Negative-margin compensates for the hit-area padding so the visible glyph aligns with the empty col-7 placeholders on fixed rows. **`transform: translateY(-2px)`** lifts the glyph onto the row's optical centerline — `×` is rendered baseline-anchored (the font's ascent/descent split is ~75/25), so default text-flow drops it ~2px below the line-box center and reads as sagging onto the row's text baseline. The 2px nudge is purely visual; it doesn't affect layout or the hit area.
+
+#### Permanent input row (last row)
+
+After the watchlist rows, a permanent input row is rendered while `watchlist.crypto.length < cap`. Layout: a faint `+` indicator in col 1 (also `justify-self: start` so it pixel-aligns with the brand dots above), the existing `TickerTabInput` component spanning cols 2–7. The component's popover surfaces matching Binance pairs as the user types; clicking a suggestion immediately commits the symbol to the watchlist (it appears as a real row above) and **the input force-remounts via a `{#key cryptoInputKey}` block** — bumping the key on every `onPick` / `onClose` clears the field and resets internal state, ready for the next entry without a click on `[+]`. The input row is `position: sticky; bottom: 0` so a long scrolled watchlist can't push the add affordance off-screen.
+
+Two behaviors run on every successful pick:
+
+- **Smart fetch** — `tickers.fetchOneCrypto(symbol)` pulls _only_ the new pair from Binance's `/ticker/24hr` endpoint and merges it into `cryptoTickers` (~120ms typically). Re-fetching every existing watchlist symbol on each add would waste the request (Binance's `/ticker/24hr` weight scales with the symbols-list size, and the existing rows are at most 5 min stale). Fire-and-forget; the new row appears with a Skeleton placeholder until the fetch resolves.
+- **Auto-scroll-to-bottom** — `cryptoSpotsScrollEl.scrollTo({ top: scrollHeight, behavior: 'smooth' })` runs inside `tick().then(...)` so the freshly-appended row scrolls into view. Without this, on a long scrolled-down list the sticky input row would occlude its own new entry. Note: `TickerTabInput.onMount` deliberately does **not** auto-focus the input — an auto-focus would trigger the browser's default scroll-into-view on the input element, racing with this scrollTo. Letting the user click into the input is the simpler, less surprising default.
+
+#### Blank tabs (`[+]` flow)
+
+`[+]` in the header pushes a placeholder id into `cryptoPlaceholders` and switches `cryptoTab` to `p:N`. The body renders an "Empty tab — content coming soon." centered hint instead of the spots grid. Each placeholder tab has a `×` to close. The active-tab fallback on close is `'binance'`. Placeholders count against the same 10-slot cap as watchlist symbols (shared budget — keeps the strip compact).
+
 ### Unified number formatting
 
 Single tiered-precision ladder in `shared/number-format.ts` — covers fiat, crypto, forex rates:
@@ -150,16 +191,18 @@ Callers pick the locale (`en-US` for comma-thousands, `vi-VN` for dot-thousands)
     - Candle size bonus: 1D=0, 3D=+1×step, 1W=+2×step
     - Tier thresholds use 1D-equivalent candle count (numCandles × sizeFactor) to keep tier stable across candle sizes
 
-## Watchlist tab UX
+## Watchlist tab UX (VN100 stocks card)
 
-Chrome-tab-inspired pattern for adding/managing custom tickers.
+Chrome-tab-inspired pattern for adding/managing custom tickers. **Scope: VN100 stocks card only.** The Binance crypto card migrated to the row-based pattern above (single consolidated grid with a permanent input row at the bottom); the Bullion card has no watchlist.
 
 - **+ button:** 18×18 circle (`border-radius: 50%`), `align-self: flex-start`, `position: sticky; right: 0` inside the scroll container. Invisible bg at rest (matches card surface); circle bg appears on hover. Hidden when `filled + placeholders >= 10` (per-asset-class cap).
-- **Placeholder tab:** clicking `+` creates a transient tab with an inline `<input>` (via `TickerTabInput` component). Input auto-expands width as user types (`width: max(3, len+1)ch`). No placeholder text.
+- **Placeholder tab:** clicking `+` creates a transient tab with an inline `<input>` (via `TickerTabInput` component). Input auto-expands width as user types (`width: max(minWidthCh, len+1)ch`, default `minWidthCh = 3`). No placeholder text.
 - **Popover suggestions:** shadcn-svelte `Popover` anchored to the input, portal-rendered (escapes `overflow: hidden`). OLED-optimized bg `var(--rl-color-bg)`, deep shadow `0 8px 24px rgba(0,0,0,0.6)`. Dark thin scrollbar. Results fetched via debounced server-side search (200ms). Keyboard nav: `↑`/`↓` cycle through results (wraps at bounds), `Enter` picks highlighted, `Esc` clears query or discards tab.
 - **Filled tabs:** display formatted pair label — USDT-quoted pairs strip the suffix (`ADAUSDT` → `ADA`), others show muted quote (`ETHBTC` → `ETH` + muted `/BTC` at `0.78em`). `×` button for removal. Brand accent color on active tab when base matches `BRAND_COLORS` map.
 - **Placeholders are transient** — cleared on page reload. Only filled tabs persist via `localStorage`.
 - **Expand animation:** new tab wraps animate width 0 → natural via custom Svelte `expandX` transition (180ms, `cubicOut`). Reverses on removal.
+
+`TickerTabInput` is shared with the Binance card's permanent input row, where it's rendered with `minWidthCh={6}` (wider host gets a more inviting input footprint) inside a grid cell instead of a tab wrap.
 
 ### Brand colors (popular tokens)
 

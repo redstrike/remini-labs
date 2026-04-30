@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte'
+	import { tick } from 'svelte'
 	import { Debounced } from 'runed'
 
 	import * as Popover from '$lib/components/shadcn-svelte/popover/index.js'
@@ -14,9 +14,13 @@
 		has: (symbol: string) => boolean
 		onPick: (symbol: string) => void
 		onClose: () => void
+		/** Floor width for the input in ch units. Default 3ch matches the chrome-tab placeholder
+		 * footprint; raise (e.g. 6) when the input lives in a wider host like a table row, so the
+		 * field reads as inviting rather than cramped. */
+		minWidthCh?: number
 	}
 
-	let { type, add, has, onPick, onClose }: Props = $props()
+	let { type, add, has, onPick, onClose, minWidthCh = 3 }: Props = $props()
 
 	const searchUrl = $derived(type === 'crypto' ? '/tickers/api/search/crypto' : '/tickers/api/search/stocks')
 	const DEBOUNCE_MS = 200
@@ -31,13 +35,6 @@
 	const cleanQuery = $derived(query.trim().replace(/\//g, ''))
 	const debouncedQuery = new Debounced(() => cleanQuery, DEBOUNCE_MS)
 
-	// Auto-focus on mount — runs once. Was a $effect before; onMount makes the one-shot intent
-	// explicit (no reactive deps to track) and matches how every other one-shot mount task in
-	// the codebase is wired.
-	onMount(() => {
-		tick().then(() => inputEl?.focus())
-	})
-
 	// Scroll the highlighted item into view when navigating with keyboard.
 	$effect(() => {
 		const idx = highlighted
@@ -47,8 +44,8 @@
 		})
 	})
 
-	// Auto-expand input width based on typed characters
-	const inputWidth = $derived(`${Math.max(3, query.length + 1)}ch`)
+	// Auto-expand input width based on typed characters; floor at minWidthCh.
+	const inputWidth = $derived(`${Math.max(minWidthCh, query.length + 1)}ch`)
 
 	// Popover opens when we have results to show
 	const showPopover = $derived(results.length > 0 && query.trim().length > 0)

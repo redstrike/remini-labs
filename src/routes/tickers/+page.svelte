@@ -108,22 +108,30 @@
 	]
 	let candleSize = $state<CandleSize>('1D')
 	let metalTab = $state<'metals' | 'forex'>('metals')
-	// Tab IDs are strings: fixed symbols ('BTC', 'ETH', 'SOL', 'VN100'), watchlist symbols
-	// ('ETHUSDT', 'FPT'…), or placeholder pseudo-IDs ('p:1', 'p:2'). Chrome-tab UX — clicking +
-	// creates a new placeholder tab in-line, becomes active immediately.
-	let cryptoTab = $state<string>('BTC')
+	// Crypto card tabs: 'binance' is the canonical Spots view (consolidated grid). Placeholder
+	// pseudo-IDs ('p:1', 'p:2') are blank tabs reserved for future content (per-exchange views,
+	// custom panels, etc.). Stock card tabs: 'VN100' or watchlist symbols ('FPT'…) or placeholder
+	// pseudo-IDs as their existing chrome-tab UX.
+	let cryptoTab = $state<string>('binance')
 	let stockTab = $state<string>('VN100')
 	let cryptoPlaceholders = $state<number[]>([])
 	let stockPlaceholders = $state<number[]>([])
 	let nextPlaceholderId = 1
+	// Permanent ticker-input row at the bottom of the Binance grid auto-clears via this key —
+	// any successful pick or Escape bumps it to force-remount the TickerTabInput component
+	// (whose internal `query` state doesn't reset on its own after `add` succeeds).
+	let cryptoInputKey = $state(0)
 	// Refs to the scrollable tab strips so adding a placeholder can scroll the new one into view.
 	let cryptoTabsEl = $state<HTMLDivElement | null>(null)
 	let stockTabsEl = $state<HTMLDivElement | null>(null)
+	// Ref to the Binance scroll container — used to auto-scroll the freshly added watchlist row
+	// into view (sticky input row can sit on top of the new entry on a long list otherwise).
+	let cryptoSpotsScrollEl = $state<HTMLDivElement | null>(null)
 
-	const FIXED_CRYPTO = new Set(['BTC', 'ETH', 'SOL'])
 	const FIXED_STOCK = new Set(['VN100'])
-	// Pairs the fixed BTC/ETH/SOL tabs already cover — block them from the picker so the strip
-	// can never show two "ETH" tabs (one fixed, one watchlist) that would look like duplicates.
+	// Pairs the fixed BTC/ETH/SOL rows already cover — block them from the picker so the watchlist
+	// can never duplicate a fixed major (an "ETH" watchlist row alongside the fixed ETH row would
+	// look broken).
 	const RESERVED_CRYPTO = new Set(['BTCUSDT', 'ETHUSDT', 'SOLUSDT'])
 
 	// Brand accent per popular base asset — applied to the active watchlist tab when the base
@@ -168,8 +176,7 @@
 	function addCryptoPlaceholder() {
 		const id = nextPlaceholderId++
 		cryptoPlaceholders = [...cryptoPlaceholders, id]
-		cryptoTab = `p:${id}`
-		// Wait for DOM update, then scroll the strip so the new placeholder is visible at the right.
+		cryptoTab = `p:${id}` // jump to the freshly-created blank tab
 		tick().then(() => {
 			if (cryptoTabsEl) cryptoTabsEl.scrollLeft = cryptoTabsEl.scrollWidth
 		})
@@ -184,16 +191,12 @@
 	}
 	function discardCryptoPlaceholder(id: number) {
 		cryptoPlaceholders = cryptoPlaceholders.filter((i) => i !== id)
-		// If the discarded placeholder was active, fall back to the first fixed tab.
-		if (cryptoTab === `p:${id}`) cryptoTab = 'BTC'
+		// If the discarded tab was active, fall back to the canonical Binance view.
+		if (cryptoTab === `p:${id}`) cryptoTab = 'binance'
 	}
 	function discardStockPlaceholder(id: number) {
 		stockPlaceholders = stockPlaceholders.filter((i) => i !== id)
 		if (stockTab === `p:${id}`) stockTab = 'VN100'
-	}
-	function commitCryptoPick(placeholderId: number, symbol: string) {
-		cryptoPlaceholders = cryptoPlaceholders.filter((i) => i !== placeholderId)
-		cryptoTab = symbol // jump to the freshly-filled tab
 	}
 	function commitStockPick(placeholderId: number, symbol: string) {
 		stockPlaceholders = stockPlaceholders.filter((i) => i !== placeholderId)
@@ -201,7 +204,6 @@
 	}
 	function removeCryptoSymbol(symbol: string) {
 		tickers.watchlist.removeCrypto(symbol)
-		if (cryptoTab === symbol) cryptoTab = 'BTC'
 	}
 	function removeStockSymbol(symbol: string) {
 		tickers.watchlist.removeStock(symbol)
@@ -607,65 +609,41 @@
 				{/if}
 			</div>
 
-			<!-- Crypto Card (BTC / ETH / SOL tabs) -->
+			<!-- Crypto Card (Binance Spots grid + future blank tabs) -->
 			<div class="tickers-card">
 				<div class="tickers-card-header">
 					<div class="tickers-card-tabs" bind:this={cryptoTabsEl} onwheel={horizontalWheel}>
-						{#each CRYPTO as coin}
-							<button
-								class="tickers-card-tab"
-								class:active-crypto={cryptoTab === coin.id}
-								style:--crypto-accent={coin.accent}
-								onclick={() => (cryptoTab = coin.id)}>
-								{coin.id}
-							</button>
-						{/each}
-						{#each tickers.watchlist.crypto as symbol (symbol)}
-							{@const fmt = formatCryptoDisplay(symbol)}
-							{@const accent = brandFor(symbol)}
-							<span class="tickers-card-tab-wrap" transition:expandX>
-								<button
-									class="tickers-card-tab tickers-card-tab-watchlist"
-									class:active={cryptoTab === symbol && !accent}
-									class:active-branded={cryptoTab === symbol && accent}
-									style:--brand-accent={accent}
-									onclick={() => (cryptoTab = symbol)}>
-									{fmt.primary}{#if fmt.suffix}<span class="tickers-card-tab-quote">{fmt.suffix}</span
-										>{/if}
-								</button>
-								<button
-									class="tickers-card-tab-x"
-									onclick={() => removeCryptoSymbol(symbol)}
-									title="Remove from watchlist">
-									×
-								</button>
-							</span>
-						{/each}
+						<button
+							class="tickers-card-tab tickers-card-tab-binance"
+							class:active={cryptoTab === 'binance'}
+							onclick={() => (cryptoTab = 'binance')}>
+							Binance
+						</button>
+						<!-- Blank tabs reserved for future content (per-exchange views, etc.). Body is
+						     intentionally empty until a use case lands. -->
 						{#each cryptoPlaceholders as id (id)}
 							<span class="tickers-card-tab-wrap" transition:expandX>
-								<TickerTabInput
-									type="crypto"
-									add={tickers.watchlist.addCrypto}
-									has={(s) => tickers.watchlist.hasCrypto(s) || RESERVED_CRYPTO.has(s)}
-									onPick={(symbol) => commitCryptoPick(id, symbol)}
-									onClose={() => discardCryptoPlaceholder(id)} />
+								<button
+									class="tickers-card-tab"
+									class:active={cryptoTab === `p:${id}`}
+									onclick={() => (cryptoTab = `p:${id}`)}>
+									Tab {id}
+								</button>
 								<button
 									class="tickers-card-tab-x"
 									onclick={() => discardCryptoPlaceholder(id)}
-									title="Discard">
+									title="Close tab">
 									×
 								</button>
 							</span>
 						{/each}
-						<!-- + sits inside the scroll container with position:sticky so it hugs the rightmost
-						     tab when content fits, and docks to the right edge when content overflows.
-						     Hidden once the watchlist hits its cap so the user can't open empty placeholders
-						     they wouldn't be able to fill. -->
+						<!-- + creates a new blank tab (future use cases). Adding crypto symbols to the
+						     watchlist is handled by the permanent input row at the Binance grid bottom. -->
 						{#if cryptoSlotsUsed < tickers.watchlist.cap}
 							<button
 								class="tickers-card-tab tickers-card-tab-add"
 								onclick={addCryptoPlaceholder}
-								title="Add crypto ticker">
+								title="Open new tab">
 								+
 							</button>
 						{/if}
@@ -685,84 +663,128 @@
 					</div>
 				</div>
 
-				{#if cryptoTab.startsWith('p:')}
-					<!-- Empty body while user types in the tab-strip input; popover shows results there. -->
-				{:else if !FIXED_CRYPTO.has(cryptoTab)}
-					{@const item = tickers.getCryptoTickerBySymbol(cryptoTab)}
-					{@const split = splitCryptoSymbol(cryptoTab)}
-					{@const quote = split?.quote ?? 'USDT'}
-					{#if item}
-						{@const up = item.priceChange >= 0}
-						<div class="tickers-price-row">
-							<span class="tickers-price-label">Price</span>
-							<div class="tickers-price-value-wrap">
-								<span class="tickers-price-value tickers-crypto-price"
-									>{formatCryptoPrice(item.lastPrice, quote)}</span>
-								<span class="tickers-price-unit">{quote}</span>
+				{#if cryptoTab === 'binance'}
+					<div class="tickers-crypto-spots-scroll" bind:this={cryptoSpotsScrollEl}>
+						<div class="tickers-crypto-spots-grid">
+							<!-- Top header (mirrors Bullion / VCB Forex pattern). Sticky so the legend
+							     stays visible while watchlist rows scroll past. -->
+							<div class="tickers-table-header tickers-crypto-spots-header">
+								<span></span>
+								<span></span>
+								<span class="tickers-table-col-label">Low</span>
+								<span class="tickers-table-col-label">High</span>
+								<span class="tickers-table-col-label">Price</span>
+								<span class="tickers-table-col-label">24H</span>
+								<span></span>
 							</div>
-						</div>
-						<div class="tickers-price-row">
-							<span class="tickers-price-label">24H Change</span>
-							<div class="tickers-price-value-wrap">
-								<span class="tickers-crypto-change" class:up class:down={!up}>
-									{up ? '+' : ''}{formatCryptoPrice(item.priceChange, quote)}
+
+							<!-- Rows 1–3: fixed majors (BTC / ETH / SOL) -->
+							{#each CRYPTO as coin (coin.id)}
+								{@const item = tickers.getCryptoTicker(coin.id)}
+								<span class="tickers-crypto-spots-dot" style:--dot={coin.accent}></span>
+								<span class="tickers-crypto-spots-asset">{coin.id}</span>
+								{#if item}
+									<span class="tickers-crypto-spots-num">{formatUSDT(item.lowPrice)}</span>
+									<span class="tickers-crypto-spots-num">{formatUSDT(item.highPrice)}</span>
+									<span class="tickers-crypto-spots-price">{formatUSDT(item.lastPrice)}</span>
+									<span
+										class="tickers-crypto-spots-pct"
+										class:up={item.priceChangePercent > 0}
+										class:down={item.priceChangePercent < 0}>
+										{formatPctSigned(item.priceChangePercent)}
+									</span>
+								{:else}
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-5 w-full" />
+									<Skeleton class="h-4 w-full" />
+								{/if}
+								<span></span>
+							{/each}
+
+							<!-- Rows 4..N: watchlist symbols -->
+							{#each tickers.watchlist.crypto as symbol (symbol)}
+								{@const fmt = formatCryptoDisplay(symbol)}
+								{@const split = splitCryptoSymbol(symbol)}
+								{@const quote = split?.quote ?? 'USDT'}
+								{@const item = tickers.getCryptoTickerBySymbol(symbol)}
+								{@const accent = brandFor(symbol) ?? '#6b8aad'}
+								<span class="tickers-crypto-spots-dot" style:--dot={accent}></span>
+								<span class="tickers-crypto-spots-asset">
+									{fmt.primary}{#if fmt.suffix}<span class="tickers-crypto-spots-asset-quote"
+											>{fmt.suffix}</span
+										>{/if}
 								</span>
-								<span class="tickers-crypto-pct" class:up class:down={!up}>
-									({up ? '+' : ''}{item.priceChangePercent.toFixed(2)}%)
-								</span>
-							</div>
-						</div>
-						<div class="tickers-crypto-range">
-							<span class="tickers-crypto-range-pair">
-								<span class="tickers-crypto-range-label">L</span>
-								<span class="tickers-crypto-range-value"
-									>{formatCryptoPrice(item.lowPrice, quote)}</span>
-							</span>
-							<span class="tickers-crypto-range-pair">
-								<span class="tickers-crypto-range-label">H</span>
-								<span class="tickers-crypto-range-value"
-									>{formatCryptoPrice(item.highPrice, quote)}</span>
-							</span>
-						</div>
-					{:else}
-						<div class="tickers-price-row">
-							<Skeleton class="h-6 w-32" />
-						</div>
-					{/if}
-				{:else if tickers.getCryptoTicker(cryptoTab as 'BTC' | 'ETH' | 'SOL')}
-					{@const item = tickers.getCryptoTicker(cryptoTab as 'BTC' | 'ETH' | 'SOL')!}
-					{@const up = item.priceChange >= 0}
-					<div class="tickers-price-row">
-						<span class="tickers-price-label">Price</span>
-						<div class="tickers-price-value-wrap">
-							<span class="tickers-price-value tickers-crypto-price">{formatUSDT(item.lastPrice)}</span>
-							<span class="tickers-price-unit">USDT</span>
+								{#if item}
+									<span class="tickers-crypto-spots-num"
+										>{formatCryptoPrice(item.lowPrice, quote)}</span>
+									<span class="tickers-crypto-spots-num"
+										>{formatCryptoPrice(item.highPrice, quote)}</span>
+									<span class="tickers-crypto-spots-price"
+										>{formatCryptoPrice(item.lastPrice, quote)}</span>
+									<span
+										class="tickers-crypto-spots-pct"
+										class:up={item.priceChangePercent > 0}
+										class:down={item.priceChangePercent < 0}>
+										{formatPctSigned(item.priceChangePercent)}
+									</span>
+								{:else}
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-5 w-full" />
+									<Skeleton class="h-4 w-full" />
+								{/if}
+								<button
+									class="tickers-crypto-spots-x"
+									onclick={() => removeCryptoSymbol(symbol)}
+									aria-label="Remove {symbol}">
+									×
+								</button>
+							{/each}
+
+							<!-- Permanent input row — always present at the table bottom while watchlist has
+						     room. Pick a suggestion → symbol joins the watchlist rows above; input clears
+						     via the `{#key}` remount and is ready for the next entry. -->
+							{#if tickers.watchlist.crypto.length < tickers.watchlist.cap}
+								<div class="tickers-crypto-spots-input-row">
+									<span class="tickers-crypto-spots-input-icon" aria-hidden="true">+</span>
+									<div class="tickers-crypto-spots-input-wrapper">
+										{#key cryptoInputKey}
+											<TickerTabInput
+												type="crypto"
+												add={(symbol) => {
+													const ok = tickers.watchlist.addCrypto(symbol)
+													// Fetch ONLY the new pair — Binance's /ticker/24hr weight scales with the
+													// symbols list size, and the existing rows' data is at most 5 min stale, so
+													// re-pulling them all would be wasted. Fire-and-forget; the row appears with
+													// a skeleton placeholder until this resolves (~120ms typically).
+													if (ok) tickers.fetchOneCrypto(symbol)
+													return ok
+												}}
+												has={(s) => tickers.watchlist.hasCrypto(s) || RESERVED_CRYPTO.has(s)}
+												onPick={() => {
+													cryptoInputKey += 1
+													// Scroll the freshly-appended row into view — without this, on a long
+													// scrolled-down list the new entry would land below the visible window.
+													tick().then(() => {
+														cryptoSpotsScrollEl?.scrollTo({
+															top: cryptoSpotsScrollEl.scrollHeight,
+															behavior: 'smooth',
+														})
+													})
+												}}
+												onClose={() => (cryptoInputKey += 1)}
+												minWidthCh={6} />
+										{/key}
+									</div>
+								</div>
+							{/if}
 						</div>
 					</div>
-					<div class="tickers-price-row">
-						<span class="tickers-price-label">24H Change</span>
-						<div class="tickers-price-value-wrap">
-							<span class="tickers-crypto-change" class:up class:down={!up}>
-								{up ? '+' : ''}{formatUSDT(item.priceChange)}
-							</span>
-							<span class="tickers-crypto-pct" class:up class:down={!up}>
-								({up ? '+' : ''}{item.priceChangePercent.toFixed(2)}%)
-							</span>
-						</div>
-					</div>
-					<div class="tickers-crypto-range">
-						<span class="tickers-crypto-range-pair">
-							<span class="tickers-crypto-range-label">L</span>
-							<span class="tickers-crypto-range-value">{formatUSDT(item.lowPrice)}</span>
-						</span>
-						<span class="tickers-crypto-range-pair">
-							<span class="tickers-crypto-range-label">H</span>
-							<span class="tickers-crypto-range-value">{formatUSDT(item.highPrice)}</span>
-						</span>
-					</div>
-				{:else}
-					<div class="tickers-price-row">
-						<Skeleton class="h-6 w-32" />
+				{:else if cryptoTab.startsWith('p:')}
+					<!-- Blank tab body — empty for now, reserved for future use cases. -->
+					<div class="tickers-crypto-blank-tab">
+						<span class="tickers-crypto-blank-tab-hint">Empty tab — content coming soon.</span>
 					</div>
 				{/if}
 			</div>
@@ -1055,6 +1077,18 @@
 		min-height: 215px;
 		transition: background var(--rl-duration-short) var(--rl-ease-move);
 	}
+	/* Hard-cap the dashboard's top-row pair (Bullion + Binance) at 20rem (320px) so the two
+	   cards sit pixel-flush regardless of content density. `:nth-child(-n+2)` targets only
+	   the first two children of `.tickers-cards` (= row 1 at the 640px+ 2-col breakpoint);
+	   the VN100 card (3rd child, row 2 at 1fr 1fr) keeps its natural content-driven height.
+	   flex-column lets the body slot fill any leftover space — Binance's scroll container
+	   takes it via `flex: 1`, Bullion's groups stack from the top and a tiny tail of empty
+	   space (~2px) sits below the footer-note. */
+	.tickers-cards > .tickers-card:nth-child(-n + 2) {
+		height: 20rem;
+		display: flex;
+		flex-direction: column;
+	}
 	/* Halfway lift between `--rl-color-surface` (#171717) and `--rl-color-surface-raised`
 	   (#262626). The full raised value was crowding the row:hover overlay (7% white), leaving
 	   the pointed-at row indistinguishable from the rest of the card. A gentler card lift keeps
@@ -1176,10 +1210,6 @@
 		color: var(--rl-color-asset-forex);
 		border-bottom-color: var(--rl-color-asset-forex);
 	}
-	.tickers-card-tab.active-crypto {
-		color: var(--crypto-accent);
-		border-bottom-color: var(--crypto-accent);
-	}
 	.tickers-card-tab.active-vn100 {
 		color: var(--vn100-accent);
 		border-bottom-color: var(--vn100-accent);
@@ -1197,24 +1227,6 @@
 	.tickers-card-tab-watchlist.active {
 		color: var(--rl-color-text);
 		border-bottom-color: var(--rl-color-border-strong);
-	}
-	/* Branded active state — base asset matches a known token; tint both label and underline. */
-	.tickers-card-tab-watchlist.active-branded {
-		color: var(--brand-accent);
-		border-bottom-color: var(--brand-accent);
-	}
-	/* Quote suffix on watchlist tabs ("/BTC", "/USDC") — Binance-mobile style: smaller, muted, but
-	   tracks the parent's hover/active so it doesn't feel inert next to a brightening base label. */
-	.tickers-card-tab-quote {
-		font-size: 0.78em;
-		color: var(--rl-color-text-faint);
-		font-weight: var(--rl-font-normal);
-		transition: color var(--rl-duration-micro) var(--rl-ease-move);
-	}
-	.tickers-card-tab-watchlist:hover .tickers-card-tab-quote,
-	.tickers-card-tab-watchlist.active .tickers-card-tab-quote,
-	.tickers-card-tab-watchlist.active-branded .tickers-card-tab-quote {
-		color: var(--rl-color-text-subtle);
 	}
 	/* Placeholder tab is now rendered by TickerTabInput (inline input + popover suggestions).
 	   The old .tickers-card-tab-placeholder button class is no longer used. */
@@ -2075,6 +2087,202 @@
 		font-weight: var(--rl-font-semibold);
 		color: var(--rl-color-spread);
 		font-variant-numeric: tabular-nums;
+	}
+
+	/* Crypto Spots — consolidated grid: BTC/ETH/SOL fixed rows + watchlist rows + permanent
+	   input row at the bottom. 7 cols: dot · symbol · LOW · HIGH · PRICE · 24H% · ×. Col 1
+	   is 14px — just enough for the 10px brand dot with a 4px breathing strip on the right.
+	   Diverges from Forex's 22px ingot column on purpose: dots are smaller than flags so the
+	   wider track left dead space; shrinking it lets the dot and the input row's `+` land at
+	   the same left edge AND donates ~8px to the four numeric columns for breathing room.
+	   Col 7 (16px) is a dedicated × button column populated only on watchlist rows (empty on
+	   fixed rows and the header band). */
+	.tickers-crypto-spots-grid {
+		display: grid;
+		grid-template-columns: 14px minmax(2.25rem, auto) 1fr 1fr 1fr 1fr 16px;
+		column-gap: 10px;
+		row-gap: 12px;
+		align-items: center;
+	}
+	/* Scroll container — flex-fills the card body (parent .tickers-card is flex-column with a
+	   hard 20rem cap). `min-height: 0` is required for a flex child to actually shrink below
+	   its content's intrinsic size — without it the scroll container would push the card past
+	   its 20rem cap. Sticky header + sticky input row keep the legend and add affordance pinned
+	   while data rows scroll between them. `overflow-x: hidden` suppresses the spurious
+	   horizontal scrollbar browsers add by default with `overflow-y: auto` — col 7's 16px hard
+	   track plus the scrollbar gutter can push the grid 1–2px past the container without it. */
+	.tickers-crypto-spots-scroll {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		overflow-x: hidden;
+		scrollbar-gutter: stable;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+	}
+	/* Header lives at the top (mirrors Bullion / VCB Forex). Subgrid inherits the parent's
+	   7 col tracks so the labels line up pixel-perfect with the data cells below. Sticky-top
+	   so the legend stays visible while watchlist rows scroll past. The bg + transition track
+	   the parent card's hover state — without them, the sticky band would visibly diverge from
+	   the rest of the card on hover. */
+	.tickers-crypto-spots-header {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: subgrid;
+		align-items: center;
+		position: sticky;
+		top: 0;
+		background: var(--rl-color-surface);
+		z-index: 1;
+		transition: background var(--rl-duration-short) var(--rl-ease-move);
+	}
+	.tickers-card:hover .tickers-crypto-spots-header,
+	.tickers-card:hover .tickers-crypto-spots-input-row {
+		background: #1f1f1f;
+	}
+	/* Dot anchored at col 1's left edge (justify-self: start) so it lines up vertically with
+	   the input row's `+` glyph below. With col 1 shrunk to 14px the symbol cell still reads
+	   as adjacent to the dot — a 4px trailing strip + 10px column-gap = 14px from dot's right
+	   to symbol's left, close enough to scan as one identity unit. */
+	.tickers-crypto-spots-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: var(--dot, var(--rl-color-text-faint));
+		justify-self: start;
+	}
+	.tickers-crypto-spots-asset {
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-sm);
+		font-weight: var(--rl-font-semibold);
+		letter-spacing: -0.2px;
+		color: var(--rl-color-text);
+		white-space: nowrap;
+	}
+	/* Quote suffix on watchlist rows (e.g. "/BTC", "/USDC") — Binance-mobile style: smaller,
+	   muted, sits flush with the base label so the pair reads as one token. */
+	.tickers-crypto-spots-asset-quote {
+		font-size: 0.78em;
+		color: var(--rl-color-text-faint);
+		font-weight: var(--rl-font-normal);
+		margin-inline-start: 1px;
+	}
+	/* LOW / HIGH — match Bullion's Buy/Sell treatment: same size as PRICE, lighter weight,
+	   muted color. The hierarchy reads as "reference cells" against the brighter PRICE headline. */
+	.tickers-crypto-spots-num {
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-sm);
+		font-weight: var(--rl-font-medium);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.3px;
+		color: var(--rl-color-text-subtle);
+		text-align: right;
+	}
+	/* PRICE — match Bullion's AVG treatment: same size as LOW/HIGH, semibold + bright. The
+	   weight + color delta carries the headline emphasis without a font-size jump (an earlier
+	   --rl-text-md bold draft made PRICE visibly larger and broke the row's vertical rhythm). */
+	.tickers-crypto-spots-price {
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-sm);
+		font-weight: var(--rl-font-semibold);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.3px;
+		color: var(--rl-color-text);
+		text-align: right;
+	}
+	.tickers-crypto-spots-pct {
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-sm);
+		font-weight: var(--rl-font-semibold);
+		font-variant-numeric: tabular-nums;
+		color: var(--rl-color-text-faint);
+		text-align: right;
+	}
+	.tickers-crypto-spots-pct.up {
+		color: var(--rl-color-up);
+	}
+	.tickers-crypto-spots-pct.down {
+		color: var(--rl-color-down);
+	}
+	/* × on watchlist rows. Negative margin compensates for hit-area padding so the visible glyph
+	   sits at the same x as the empty col-7 placeholders on fixed rows. The 2px upward nudge
+	   accounts for the font's baseline-anchored render of `×` — the glyph's optical center
+	   lands below the line-box's geometric midline (font ascent/descent split is ~75/25, so
+	   `line-height: 1` puts the baseline at ~75% from the top), which makes the button read
+	   as sagging onto the row's text baseline rather than sitting on its centerline. */
+	.tickers-crypto-spots-x {
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-md);
+		line-height: 1;
+		color: var(--rl-color-text-faint);
+		background: transparent;
+		border: none;
+		padding: 4px;
+		margin: -4px;
+		cursor: pointer;
+		border-radius: 4px;
+		transform: translateY(-2px);
+		transition:
+			color var(--rl-duration-micro, 120ms) var(--rl-ease-move, ease-out),
+			background var(--rl-duration-micro, 120ms) var(--rl-ease-move, ease-out);
+	}
+	.tickers-crypto-spots-x:hover {
+		color: var(--rl-color-text);
+		background: var(--rl-color-surface-raised);
+	}
+	/* Permanent input row — sits at the bottom of the grid, always available for adding the
+	   next watchlist symbol (no extra click). Subgrid so the faint + indicator drops into col 1
+	   and the TickerTabInput spans cols 2–7 with the same column rhythm as the data rows.
+	   Sticky-bottom so a long scrolled watchlist doesn't push the add affordance off-screen —
+	   the input always reads as the row that "comes next". No extra padding-block: the row
+	   shares the grid's `row-gap: 12px` rhythm with the data rows above, so it reads as a
+	   continuation rather than a separated band. The bg + transition track the parent card's
+	   hover state via the rule above. */
+	.tickers-crypto-spots-input-row {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: subgrid;
+		align-items: center;
+		position: sticky;
+		bottom: 0;
+		background: var(--rl-color-surface);
+		z-index: 1;
+		transition: background var(--rl-duration-short) var(--rl-ease-move);
+	}
+	/* `+` glyph anchored at col 1's left edge to match the brand dots above (justify-self:
+	   start). Visually they share the same leading column position so the input row reads
+	   as a continuation of the data rows, just with an "add" affordance instead of an
+	   identity color. */
+	.tickers-crypto-spots-input-icon {
+		justify-self: start;
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-md);
+		font-weight: var(--rl-font-bold);
+		line-height: 1;
+		color: var(--rl-color-text-faint);
+	}
+	.tickers-crypto-spots-input-wrapper {
+		grid-column: 2 / -1;
+		display: flex;
+		align-items: center;
+	}
+	/* Empty body shown when a blank tab is active (placeholder for future content). */
+	.tickers-crypto-blank-tab {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 140px;
+	}
+	.tickers-crypto-blank-tab-hint {
+		font-size: var(--rl-text-sm);
+		color: var(--rl-color-text-faint);
+		font-style: italic;
+	}
+	/* Binance tab — official brand yellow (#F0B90B). Tints the label and underline when active.
+	   The grid rows below carry their own per-asset brand colors via the dot column. */
+	.tickers-card-tab-binance.active {
+		color: #f0b90b;
+		border-bottom-color: #f0b90b;
 	}
 
 	@keyframes spin {

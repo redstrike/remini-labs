@@ -318,6 +318,23 @@ export function useTickers(initialData: TickersData) {
 		return cryptoTickers.find((t) => t.symbol === symbol) ?? null
 	}
 
+	/** Fetch a single crypto pair and merge it into `cryptoTickers` without disturbing the rest.
+	 * Used when a user adds a new watchlist symbol — the alternative would be a full
+	 * `fetchCryptoTickers()` call that re-pulls every existing pair just to fill the new row,
+	 * which is wasteful (Binance's `/ticker/24hr` weight scales with the symbols list size, and
+	 * the existing pairs' data is at most a few seconds stale anyway). Single-symbol fetches stay
+	 * within the cheap weight tier and only mutate the array at the merged position. */
+	async function fetchOneCrypto(symbol: string): Promise<void> {
+		try {
+			const result = await fetchBinanceTickers([symbol as CryptoSymbol])
+			if (result.length === 0) return
+			const next = cryptoTickers.filter((t) => t.symbol !== symbol)
+			cryptoTickers = [...next, ...result]
+		} catch (e) {
+			console.error(`fetchOneCrypto(${symbol}) failed:`, e)
+		}
+	}
+
 	// VN100 spot quote + watchlist stock quotes
 	let vn100Quote = $state<IndexQuote | null>(initialData.vn100 ?? null)
 	let stockQuotes = $state<Map<string, StockQuote>>(new Map())
@@ -633,6 +650,7 @@ export function useTickers(initialData: TickersData) {
 		},
 		getCryptoTicker,
 		getCryptoTickerBySymbol,
+		fetchOneCrypto,
 		get vn100Quote() {
 			return vn100Quote
 		},
