@@ -54,7 +54,7 @@ export const load = async ({ fetch }) => {
 		meta: {
 			appName: 'Tickers',
 			description:
-				'Live gold, silver, crypto, and VN stock index prices with candlestick charts. A Remini Labs mini-app by redstrike.',
+				'Live Vietnam gold, silver, stock index, and Binance crypto — all with candlestick charts. Plus VCB forex rates. A Remini Labs mini-app by redstrike.',
 			ogImage: '/og-tickers.png',
 		},
 		metals,

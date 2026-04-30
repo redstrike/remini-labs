@@ -10,6 +10,7 @@
 	import { browser } from '$app/environment'
 	import { PersistedState } from 'runed'
 	import { initClockSync } from '$lib/clock-sync'
+	import { DEFAULT_OG_IMAGE, SHELL_DESCRIPTION, SITE_NAME } from '$lib/site'
 
 	let { children } = $props()
 
@@ -32,17 +33,15 @@
 
 	// ── Meta tag contract ────────────────────────────────────────────────
 	// Each mini-app's +page.ts can set page.data.meta.{appName, description, ogImage}.
-	// Shell fills shared brand defaults; apps override only what they want.
-	// All URLs are made absolute — social crawlers don't resolve relative paths.
-	const SHELL_DESCRIPTION =
-		'Personal research labs for experimental mini-apps — tickers, weather, and more. Crafted by redstrike (Tung Nguyen) with agentic AI development tools (Claude Code, Antigravity, etc.)'
-
+	// Shell fills shared brand defaults from $lib/site; apps override only what
+	// they want. All URLs are made absolute — social crawlers don't resolve
+	// relative paths.
 	let meta = $derived(page.data.meta ?? {})
 	let origin = $derived(page.data.origin ?? page.url.origin)
 	let pathname = $derived(page.data.pathname ?? page.url.pathname)
-	let title = $derived(meta.appName ? `${meta.appName} — Remini Labs` : 'Remini Labs')
+	let title = $derived(meta.appName ? `${meta.appName} — ${SITE_NAME}` : SITE_NAME)
 	let description = $derived(meta.description ?? SHELL_DESCRIPTION)
-	let ogImagePath = $derived(meta.ogImage ?? '/og-default.png')
+	let ogImagePath = $derived(meta.ogImage ?? DEFAULT_OG_IMAGE)
 	let ogImageUrl = $derived(`${origin}${ogImagePath}`)
 	let canonical = $derived(`${origin}${pathname}`)
 </script>
@@ -55,7 +54,7 @@
 
 	<!-- Open Graph — FB, Messenger, Zalo, Threads, LinkedIn, Discord, … -->
 	<meta property="og:type" content="website" />
-	<meta property="og:site_name" content="Remini Labs" />
+	<meta property="og:site_name" content={SITE_NAME} />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:url" content={canonical} />
@@ -90,7 +89,7 @@
 						}
 					}}>
 					<img src="/favicon.png" alt="" width="18" height="18" />
-					<span class="font-semibold">Remini Labs</span>
+					<span class="font-semibold">{SITE_NAME}</span>
 				</a>
 				{#if appName}
 					<span class="text-muted-foreground">›</span>
