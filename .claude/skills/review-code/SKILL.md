@@ -34,7 +34,7 @@ A code review pass over the project's JS/TS surface that may apply refactors aft
 3. **Dedup** — extract tiny single-purpose helpers with the best-DX function signatures
 4. **Apply refactor** — only after explicit approval
 
-**Net-simplicity bar — every refactor must clear it.** A Modernize swap, Tier 1 swap, Tier 2 extraction, or any approved change is only valid if it produces **less code to read OR simpler code to understand**. Matching a quick-reference pattern is necessary but NOT sufficient. If swapping a hand-rolled pattern for a Runed primitive ADDS lines or shifts complexity to a less-obvious shape (imperative `pause()`/`resume()` vs declarative `$effect` cleanup; symmetric `Debounced` stuck on an asymmetric anti-flash gate; `useEventListener` in a module-level `.ts` file with no reactive scope), the refactor FAILS the bar — skip it and document the rejection. Don't churn for refactor's sake. Blast radius across many files is a red flag, not a feature. See `feedback_refactor_net_simplicity.md`.
+**Net-simplicity bar — every refactor must clear it.** A Modernize swap, Tier 1 swap, Tier 2 extraction, or any approved change is only valid if it produces **less code to read OR simpler code to understand**. Matching a quick-reference pattern is necessary but NOT sufficient. If swapping a hand-rolled pattern for a Runed primitive ADDS lines or shifts complexity to a less-obvious shape (imperative `pause()`/`resume()` vs declarative `$effect` cleanup; symmetric `Debounced` stuck on an asymmetric anti-flash gate; `useEventListener` in a module-level `.ts` file with no reactive scope), the refactor FAILS the bar — skip it and document the rejection. Don't churn for refactor's sake. Blast radius across many files is a red flag, not a feature. See `/redstrike: coding-prefs/refactor-net-simplicity` for the user's framing.
 
 ## Preconditions — check in order, stop on first failure
 
@@ -228,7 +228,7 @@ Escalation table when a finding/proposal needs deeper reference info:
 | Runed primitive deep details                                                 | `Grep docs/runed/llms.txt` first; if catalog row insufficient → `mcp__context7__query-docs` for `/svecosystem/runed`                                                                |
 | Svelte 5 / SvelteKit semantics                                               | `Grep docs/.cache/svelte.dev/llms-full.txt` with targeted patterns; if missed → `mcp__svelte__list-sections` then `mcp__svelte__get-documentation`                                  |
 | shadcn-svelte component                                                      | `Read docs/.cache/shadcn-svelte.com/<page>.md` if cached; if missed, leave a follow-up note (don't fetch in this skill)                                                             |
-| Modernize baseline check                                                     | `Grep docs/.cache/svelte.dev/llms-full.txt` for the project floor (Vite 8 baseline-widely-available); cross-ref `feedback_es2022_2025_popular.md`                                   |
+| Modernize baseline check                                                     | `Grep docs/.cache/svelte.dev/llms-full.txt` for the project floor (Vite 8 baseline-widely-available); cross-ref `/redstrike: tech-stack/javascript-modern/README`                   |
 | Cloudflare Workers / KV / R2 / D1 / DO / AI / Email / Sandbox best practices | Resolve via the CF reference resolution chain above (project plugin → personal plugin → cloudflare-docs MCP → WebFetch); pick the `cloudflare:*` skill via the subtag → skill table |
 
 Never read `docs/.cache/svelte.dev/llms-full.txt` in full — Grep with targeted patterns.
@@ -266,7 +266,7 @@ ISSUE FOUND
 
 ### Don't reflexively skip cheap fixes on rare paths
 
-When a finding sits on an auth-gated, manual, or infrequent path (admin diagnostics, ops endpoints, weekly maintenance scripts), the natural cost-benefit answer is "skip — too rare to matter." The user's preference is the opposite: if the fix is **≲20 lines, single file, no signature churn**, surface it as a propose-with-rationale rather than pre-marking it skipped. _"Cost is small, mental gains in codebase pride are the luxury part."_ See `feedback_rare_path_quality_fix.md`.
+When a finding sits on an auth-gated, manual, or infrequent path (admin diagnostics, ops endpoints, weekly maintenance scripts), the natural cost-benefit answer is "skip — too rare to matter." The user's preference is the opposite: if the fix is **≲20 lines, single file, no signature churn**, surface it as a propose-with-rationale rather than pre-marking it skipped. _"Cost is small, mental gains in codebase pride are the luxury part."_ See `/redstrike: coding-prefs/rare-path-quality-fix` for the decision tree.
 
 Apply this filter when categorizing findings: rarity does NOT downgrade severity, and cost-benefit math does NOT auto-skip cheap fixes. Let the user decide.
 
@@ -290,11 +290,11 @@ Apply this filter when categorizing findings: rarity does NOT downgrade severity
     - **Config:** missing `nodejs_compat` flag on `node:*` imports; stale `compatibility_date` (>6 months); hand-written `Env` interface that drifts from `wrangler types`; hardcoded secrets in `vars` instead of `wrangler secret put`; `wrangler.toml` instead of `wrangler.jsonc`.
     - **Request/Response:** `await response.text/json/arrayBuffer()` on unbounded data (128 MB OOM — stream with `TransformStream` or `new Response(response.body, response)`); destructuring `ctx` (`const { waitUntil } = ctx` → "Illegal invocation" at runtime); inline `await` on background work that should be `ctx.waitUntil()`.
     - **Architecture:** Cloudflare REST API call (`fetch("https://api.cloudflare.com/client/v4/...")`) where a binding exists (KV / R2 / D1 / Queues / Vectorize / Hyperdrive); Worker-to-Worker via public URL instead of service binding (`env.SVC.method()` RPC or `env.SVC.fetch()`); direct PG/MySQL `new Client()` without Hyperdrive (300–500 ms TCP+TLS+auth penalty per request); long-running work in fetch handler instead of Queues / Workflows.
-    - **Code Patterns:** module-level mutable state (`let user = ...` reassigned in handler) → cross-request leak + "Cannot perform I/O on behalf of a different request"; floating promise (no `await` / `return` / `ctx.waitUntil`); CPU-heavy sync work near the 10 ms (Bundled) / 30 s (Standard) limits; Cache API `Cache-Control: private` silently blocking `cache.put` (use `public, s-maxage=N, max-age=0` — see `reference_workers_cache_api_gotchas.md`); `console.log("string " + var)` instead of structured `JSON.stringify({...})` for queryable logs; `observability.enabled` missing from wrangler config.
+    - **Code Patterns:** module-level mutable state (`let user = ...` reassigned in handler) → cross-request leak + "Cannot perform I/O on behalf of a different request"; floating promise (no `await` / `return` / `ctx.waitUntil`); CPU-heavy sync work near the 10 ms (Bundled) / 30 s (Standard) limits; Cache API `Cache-Control: private` silently blocking `cache.put` (use `public, s-maxage=N, max-age=0` — see `/redstrike: tech-stack/cloudflare-workers/cache-api-gotchas` for related gotchas); `console.log("string " + var)` instead of structured `JSON.stringify({...})` for queryable logs; `observability.enabled` missing from wrangler config.
     - **Security:** `Math.random()` for tokens / IDs / session keys (use `crypto.randomUUID()` or `crypto.getRandomValues()`); secret comparison via `===` instead of `crypto.subtle.timingSafeEqual` after fixed-size hash (timing side-channel); `ctx.passThroughOnException()` as error handling (use explicit try/catch + structured JSON 500 + `console.error`); secret leakage into client bundle (`PUBLIC_*` env vs server-only).
     - **Platform classes (`+DO` / `+RPC` / `+WORKFLOW` subtags):** `implements DurableObject` instead of `extends` (loses `this.ctx` / `this.env`); `env.X` inside the class body instead of `this.env.X`; missing `wrangler types` regen after binding rename; `any` on `Env` or handler params (defeats binding type safety).
     - **Product-specific (subtag escalation):** any of `+AGENTS-SDK` / `+SANDBOX-SDK` / `+WORKERS-AI` / `+EMAIL` present → escalate to the matching `cloudflare:*/references/rules.md` for product-specific rules. The bullets above remain always-on; product rules layer on top.
-- **UNIVERSAL (`+page.ts` / `+layout.ts`):** fire-and-forget fetch double-firing on hydration; bare `window.fetch` not deduping (use `event.fetch`); top-level un-awaited promise that should stream as a deferred chunk. See `reference_sveltekit_universal_load.md`, `reference_sveltekit_streaming_load.md`.
+- **UNIVERSAL (`+page.ts` / `+layout.ts`):** fire-and-forget fetch double-firing on hydration; bare `window.fetch` not deduping (use `event.fetch`); top-level un-awaited promise that should stream as a deferred chunk. See `/redstrike: tech-stack/sveltekit/universal-load`, `/redstrike: tech-stack/sveltekit/streaming-load`.
 - **BROWSER:** prefer Web Standards by default — `fetch` over `axios`; `URL` / `URLSearchParams` over manual parsing; `crypto.subtle` over crypto-js; `AbortController` over a cancelled-flag; `structuredClone` over JSON-parse-stringify; `queueMicrotask` over `Promise.resolve().then`.
 - **NODE / BUN / DENO:** prefer Web Standards globals when portable (`fetch`, `URL`, `crypto.subtle`, `AbortController`, `ReadableStream`); flag a `node:*` import that has a Web Standards equivalent in a file that is otherwise portable.
 - **ANY (portable):** no runtime-locked imports; if a `node:*` import sneaks into an `ANY`-tagged file, that's a portability bug.
@@ -309,7 +309,7 @@ Number globally across severities (so the user can reference indexes), but group
 ### Correctness
 1. [L1 · ANY] src/lib/utils/api.ts:55 — fetch effect missing AbortController; old responses can race-overwrite newer state
 2. [L2 · BROWSER] src/lib/foo.svelte:42 — $effect reads `query` directly instead of as a getter; loses reactivity on later writes
-3. [L3 · UNIVERSAL] src/routes/+page.ts:18 — fire-and-forget fetch double-fires on hydration; gate with `if (!browser)` (see reference_sveltekit_universal_load.md)
+3. [L3 · UNIVERSAL] src/routes/+page.ts:18 — fire-and-forget fetch double-fires on hydration; gate with `if (!browser)` (see `/redstrike: tech-stack/sveltekit/universal-load`)
 
 ### Security
 4. [L1 · BROWSER] src/lib/notice.svelte:7 — innerHTML rendered from upstream JSON without sanitization
@@ -374,7 +374,7 @@ MODERNIZE CANDIDATE
 | Convention `_field` / WeakMap / Symbol for private state | `#field` (when realm-bound is acceptable)  |
 | Module-level `let` mutated for lazy init                 | top-level await (leaf modules; see caveat) |
 
-See `reference_es2022_2025_popular.md`.
+See `/redstrike: tech-stack/javascript-modern/README` for ship-status matrix.
 
 #### B — ES2023 (widely-available)
 
@@ -385,7 +385,7 @@ See `reference_es2022_2025_popular.md`.
 | `arr.map((x, i) => i === idx ? newV : x)` | `arr.with(idx, newV)`                            |
 | `[...arr].reverse().find(pred)`           | `arr.findLast(pred)` / `arr.findLastIndex(pred)` |
 
-See `reference_array_immutable_methods.md`.
+See `/redstrike: tech-stack/javascript-modern/array-immutable` for shallow-copy + sparse-hole pitfalls.
 
 #### C — ES2024 (newly-available — flag baseline)
 
@@ -397,7 +397,7 @@ See `reference_array_immutable_methods.md`.
 | `Promise.all(asyncIter.map(async ...))`             | `Array.fromAsync(asyncIter)`              |
 | `/u` regex with set-algebra workarounds             | `/v` flag                                 |
 
-See `reference_groupby.md`, `reference_promise_with_resolvers.md`, `reference_regex_features.md`.
+See `/redstrike: tech-stack/javascript-modern/{groupby,promise-with-resolvers,regex}`.
 
 #### D — ES2025 (newly-available — flag baseline; some need polyfill)
 
@@ -409,7 +409,7 @@ See `reference_groupby.md`, `reference_promise_with_resolvers.md`, `reference_re
 | Manual regex source escape                               | `RegExp.escape(str)`                                 |
 | Manual `try {} finally { cleanup() }` pattern            | `using x = ...` / `await using x = ...`              |
 
-See `reference_set_methods.md`, `reference_iterator_helpers.md`, `reference_promise_try.md`.
+See `/redstrike: tech-stack/javascript-modern/{set-methods,iterator-helpers,promise-try}`.
 
 #### E — Web Standards (replace polyfills / one-off utils)
 
@@ -424,7 +424,7 @@ See `reference_set_methods.md`, `reference_iterator_helpers.md`, `reference_prom
 | Custom event-emitter class                        | `EventTarget` + `CustomEvent`                                |
 | `Buffer.from(str)` / `buf.toString()` (Node-only) | `TextEncoder` / `TextDecoder` (portable)                     |
 
-See `reference_abort_controller.md`, `reference_promise_combinators.md`.
+See `/redstrike: tech-stack/javascript-modern/{abort-controller,promise-combinators}`.
 
 #### F — TypeScript modernization
 
@@ -573,13 +573,13 @@ Proposal blocks numbered globally, continuing from Phase 2's last index:
 
 **Proposed:** Replace both call sites with `new Debounced(() => query, 300)`. Sites become 2-line `.current` reads.
 
-### 4 — `formatVnd(value, options?)` shared helper  [Tier 2 — confirm]
+### 4 — `formatTiered(value, options?)` shared helper  [Tier 2 — confirm]
 **Sites:**
 - src/lib/components/price.svelte:8 — inline `new Intl.NumberFormat('vi-VN', …).format(v)`
 - src/routes/tickers/+page.svelte:14 — same call shape
 
-**Proposed signature:** `formatVnd(value: number, options?: { decimals?: number }): string`
-**Location:** `src/lib/shared/number-format.ts` (matches existing `feedback_tiered_number_format.md`)
+**Proposed signature:** `formatTiered(value: number, options?: { decimals?: number }): string`
+**Location:** `src/lib/shared/number-format.ts` (precedent: `/redstrike: coding-prefs/tiered-number-format`)
 
 ### 5 — Watch only [Tier 3 — defer]
 2 sites use a similar try/catch/log pattern but the catch payloads diverge (one includes a request id, one doesn't). Defer until a 3rd consistent instance shows up.
