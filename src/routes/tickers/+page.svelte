@@ -1,11 +1,12 @@
 <script lang="ts">
 	import {
 		useTickers,
+		VN_STOCK_FIXED,
 		formatVND,
 		formatKVND,
 		formatPctSigned,
 		formatUSDT,
-		formatVN100,
+		formatVnIndex,
 		formatCryptoPrice,
 		formatStockPrice,
 		USDT_FORMATTER,
@@ -17,6 +18,7 @@
 	import { FreshnessDot } from '$lib/components/remini-labs/freshness-dot/index.js'
 	import { RefreshCw as SpinnerIcon, TriangleAlert, ChevronDown } from '@lucide/svelte'
 	import { formatCryptoDisplay, splitCryptoSymbol } from './shared/binance-client'
+	import { isVnIndex, type IndexQuote, type StockQuote } from './shared/ssi-iboard-client'
 	import {
 		VCB_CURRENCY_ORDER,
 		VCB_TIER_DIVIDER_INDICES,
@@ -53,16 +55,14 @@
 	const initialMetalsCachedAt = page.data.metalsCachedAt ?? 0
 	const initialCrypto = page.data.crypto ?? null
 	const initialCryptoCachedAt = page.data.cryptoCachedAt ?? 0
-	const initialVN100 = page.data.vn100 ?? null
-	const initialVN100CachedAt = page.data.vn100CachedAt ?? 0
+	const initialVnStockFixed = page.data.vnStockFixed ?? []
 	const initialGoldChart = page.data.goldChart ?? null
 	const tickers = useTickers({
 		metals: initialMetals,
 		metalsCachedAt: initialMetalsCachedAt,
 		crypto: initialCrypto,
 		cryptoCachedAt: initialCryptoCachedAt,
-		vn100: initialVN100,
-		vn100CachedAt: initialVN100CachedAt,
+		vnStockFixed: initialVnStockFixed,
 		goldChart: initialGoldChart,
 	})
 
@@ -84,13 +84,16 @@
 		BTC: '#e8993a',
 		ETH: '#5b80e8',
 		SOL: '#a566cf',
-		VN100: '#b87333',
+		VNINDEX: '#b87333', // VN copper — broadest market index, no canonical brand color
+		VN30: '#b87333', // Same copper — large-cap index, no canonical brand color
+		VNMID: '#b87333', // Same copper — mid-cap index, no canonical brand color
+		VCB: '#3a9961', // Vietcombank green (matches VN_BRAND_COLORS['VCB'])
 	}
 
 	// Volume "compact" formatter (e.g. 168.5M, 12.3K) — module-scope so we don't construct a
 	// fresh Intl.NumberFormat per VN-stock-quote render. Same memoization rationale as
 	// `shared/number-format.ts`.
-	const compactNumberFormat = new Intl.NumberFormat('en-US', { notation: 'compact' })
+	const compactNumberFormat = new Intl.NumberFormat('vi-VN', { notation: 'compact' })
 
 	const durations = [
 		{ label: '7D', value: '7D' as const },
@@ -108,31 +111,35 @@
 	]
 	let candleSize = $state<CandleSize>('1D')
 	let metalTab = $state<'metals' | 'forex'>('metals')
-	// Crypto card tabs: 'binance' is the canonical Spots view (consolidated grid). Placeholder
-	// pseudo-IDs ('p:1', 'p:2') are blank tabs reserved for future content (per-exchange views,
-	// custom panels, etc.). Stock card tabs: 'VN100' or watchlist symbols ('FPT'…) or placeholder
-	// pseudo-IDs as their existing chrome-tab UX.
-	let cryptoTab = $state<string>('binance')
-	let stockTab = $state<string>('VN100')
+	// Markets card holds two real data-source tabs side-by-side — 'binance' (canonical crypto Spots)
+	// + 'vn100' (VN_STOCK_FIXED rows + VN watchlist equities) — plus placeholder pseudo-IDs
+	// ('p:1', 'p:2') for blank tabs reserved for future content (per-exchange views, notes/alerts,
+	// custom panels, etc.). The freshness dot + refresh button in the card header swap source
+	// based on the active tab — same pattern as the Bullion card's metals-vs-forex swap.
+	let marketsCardTab = $state<string>('binance')
 	let cryptoPlaceholders = $state<number[]>([])
-	let stockPlaceholders = $state<number[]>([])
 	let nextPlaceholderId = 1
-	// Permanent ticker-input row at the bottom of the Binance grid auto-clears via this key —
-	// any successful pick or Escape bumps it to force-remount the TickerTabInput component
+	// Permanent ticker-input rows at the bottom of each tab's grid auto-clear via these keys —
+	// any successful pick or Escape bumps them to force-remount the TickerTabInput component
 	// (whose internal `query` state doesn't reset on its own after `add` succeeds).
 	let cryptoInputKey = $state(0)
-	// Refs to the scrollable tab strips so adding a placeholder can scroll the new one into view.
-	let cryptoTabsEl = $state<HTMLDivElement | null>(null)
-	let stockTabsEl = $state<HTMLDivElement | null>(null)
-	// Ref to the Binance scroll container — used to auto-scroll the freshly added watchlist row
+	let stockInputKey = $state(0)
+	// Ref to the scrollable tab strip so adding a placeholder can scroll the new one into view.
+	let marketsCardTabsEl = $state<HTMLDivElement | null>(null)
+	// Refs to per-tab body scroll containers — used to auto-scroll the freshly added watchlist row
 	// into view (sticky input row can sit on top of the new entry on a long list otherwise).
 	let cryptoSpotsScrollEl = $state<HTMLDivElement | null>(null)
+	let stockSpotsScrollEl = $state<HTMLDivElement | null>(null)
 
-	const FIXED_STOCK = new Set(['VN100'])
 	// Pairs the fixed BTC/ETH/SOL rows already cover — block them from the picker so the watchlist
 	// can never duplicate a fixed major (an "ETH" watchlist row alongside the fixed ETH row would
 	// look broken).
 	const RESERVED_CRYPTO = new Set(['BTCUSDT', 'ETHUSDT', 'SOLUSDT'])
+	// Fixed VN-stock rows (VN_STOCK_FIXED — currently VNINDEX / VN30 / VNMID / VCB) already render at the top of the VN-Stock tab
+	// body — block the picker from also adding them as watchlist rows (would render twice).
+	// Same role as RESERVED_CRYPTO above for the Binance tab's BTC/ETH/SOL fixed rows. Sourced
+	// from `VN_STOCK_FIXED` so the two stay in lock-step.
+	const RESERVED_STOCKS = new Set<string>(VN_STOCK_FIXED)
 
 	// Brand accent per popular base asset — applied to the active watchlist tab when the base
 	// matches. Hues are slightly desaturated from the canonical brand to fit the OLED dark palette
@@ -173,50 +180,183 @@
 		return split ? BRAND_COLORS[split.base] : undefined
 	}
 
-	function addCryptoPlaceholder() {
+	// Brand colors for VN-market equities — applied to the watchlist row's leading dot inside
+	// the VN-Stock tab. Hues are slightly desaturated from canonical brand identity to fit the
+	// OLED dark palette (same treatment as the crypto `BRAND_COLORS` above). Coverage focuses on
+	// the VN30 / VN100 / VNDIAMOND / VNFINLEAD constituents — the high-liquidity names users are
+	// most likely to add to their watchlist. Indices (VN30, VNDIAMOND, HNXINDEX, …) are colored
+	// by today's direction (up/down/flat) inside `brandForVnRow` instead of getting a brand entry
+	// here — there's no "VNDIAMOND brand color" anyway, but a green/red sentiment dot tells the
+	// user something useful at a glance. ETFs and unmapped equities fall through to the generic
+	// VN copper. New entries: pick the dominant color from the company's wordmark or primary
+	// logo, then nudge saturation down ~10–15% so the dot reads as accent, not glare.
+	const VN_BRAND_COLORS: Record<string, string> = {
+		// Banks — green / blue / red are the dominant tribal colors in VN banking
+		VCB: '#3a9961', // Vietcombank green (canonical)
+		BID: '#2f9968', // BIDV green-teal — slightly different from VCB to read as distinct
+		CTG: '#3878c4', // VietinBank blue
+		VPB: '#3aa572', // VPBank green (brighter than VCB)
+		MBB: '#d44a4a', // MB Bank red
+		TCB: '#e84545', // Techcombank vivid red
+		ACB: '#3a78b8', // ACB blue
+		HDB: '#e87a3a', // HDBank orange
+		TPB: '#7a5cc4', // TPBank purple
+		VIB: '#e89a45', // VIB orange
+		MSB: '#c44a4a', // Maritime Bank red
+		STB: '#5cb5d8', // Sacombank cyan
+		SHB: '#d44a3a', // SHB red-orange
+		LPB: '#3aaab5', // LienVietPostBank teal
+		OCB: '#e88a3a', // OCB orange
+		EIB: '#3a78b5', // Eximbank blue
+		// Vingroup family — share the iconic Vingroup red
+		VIC: '#d4453a',
+		VHM: '#d4453a',
+		VRE: '#d4453a',
+		// Steel / industrials
+		HPG: '#d8593a', // Hoa Phat Group red-orange
+		HSG: '#3a8db5', // Hoa Sen blue
+		NKG: '#98a4b0', // Nam Kim silver-gray
+		POM: '#a8a4b0', // Pomina silver
+		// Tech / IT
+		FPT: '#f17a3a', // FPT orange
+		CMG: '#3a6bc4', // CMC blue
+		ELC: '#3a8db8', // Elcom blue
+		// Energy / Oil & Gas
+		GAS: '#3a99c4', // PV Gas blue
+		PLX: '#d8a83a', // Petrolimex yellow (the iconic gold-yellow)
+		PVS: '#3a5c8f', // PV Tech Services dark blue
+		PVD: '#3a6f9f', // PV Drilling
+		BSR: '#c44a4a', // Binh Son Refinery red
+		POW: '#c84a4a', // PV Power red
+		PVT: '#3a78c4', // PV Trans blue
+		// Fertilizer / Chemicals
+		DGC: '#4aa05c', // Duc Giang Chemicals green
+		DCM: '#5cab68', // Ca Mau Fertilizer green
+		DPM: '#3a78c4', // Phu My Fertilizer blue
+		GVR: '#4aa068', // Vietnam Rubber Group green
+		// Cement / Industrial parks / Construction
+		BCM: '#c45a4a', // Becamex red
+		HT1: '#a8a4b0', // Ha Tien Cement gray
+		IDC: '#3a78b5', // Idico blue
+		KBC: '#3a8bc4', // Kinh Bac blue
+		SZC: '#3aaba0', // Sonadezi teal-green
+		BCC: '#a8a4a8', // Bim Son Cement gray
+		// Consumer goods / Food / Beverage
+		MWG: '#f0c43a', // Mobile World yellow (their signature)
+		MSN: '#c44a4a', // Masan red
+		VNM: '#3a8fd8', // Vinamilk vibrant blue (post-2023 rebrand)
+		SAB: '#e8b53a', // Sabeco / Saigon Beer yellow
+		BHN: '#c43a45', // Habeco / Hanoi Beer red
+		KDC: '#e89a3a', // Kido orange
+		// Aviation
+		VJC: '#e8453a', // Vietjet Air red
+		HVN: '#3a78a8', // Vietnam Airlines blue (with the cyan-blue tail livery)
+		ACV: '#3a99c4', // Airports Corp Vietnam blue
+		// Brokers / Securities
+		SSI: '#3a9968', // SSI Securities green
+		VND: '#e8c43a', // VNDirect yellow
+		HCM: '#3a78c4', // HSC blue
+		VCI: '#c44a3a', // Viet Capital Securities red
+		BSI: '#3a8bc4', // BSC blue
+		MBS: '#c44a4a', // MB Securities red (parent MB Bank)
+		FTS: '#f17a3a', // FPTS orange (parent FPT)
+		// Real estate
+		NVL: '#4a9f5a', // Novaland green
+		KDH: '#4aa08f', // Khang Dien blue-green
+		DXG: '#5cab5c', // Dat Xanh green
+		PDR: '#e89a45', // Phat Dat orange
+		DIG: '#3a8bc4', // DIC Group blue
+		HDG: '#c44a4a', // Ha Do red
+		NLG: '#4a9f5a', // Nam Long green
+		HDC: '#3a8bb5', // Ho Chi Minh Construction blue
+		// Utilities / Power
+		REE: '#3a8bc4', // REE blue
+		GEX: '#c44a3a', // Gelex red
+		PPC: '#3a78b8', // Pha Lai Power blue
+		NT2: '#3a99b5', // Nhon Trach 2 Power teal
+		// Pharma / Healthcare
+		PNJ: '#d8a83a', // PNJ jewelry gold
+		DHG: '#4aa05c', // DHG Pharma green
+		IMP: '#3aa078', // Imexpharm green-teal
+		DBD: '#5cab68', // Binh Dinh Pharma green
+		DVN: '#3a99b5', // Vietnam Pharmaceutical teal
+		TRA: '#4a9f6a', // Traphaco green
+		// Logistics / Transport
+		GMD: '#3a78c4', // Gemadept blue
+		HAH: '#3a8bb5', // Hai An Transport blue
+		VTP: '#e84a3a', // Viettel Post red
+		// Retail / Distribution
+		FRT: '#f17a3a', // FPT Retail orange (parent FPT)
+		DGW: '#3a8bc4', // Digiworld blue
+		PET: '#c44a4a', // Petrosetco red
+		// Misc large caps
+		VEA: '#3a78b8', // VEAM blue
+		PHR: '#4aa068', // Phuoc Hoa Rubber green
+		DRC: '#a8a4b0', // Da Nang Rubber gray
+		CSM: '#3a8bb5', // Casumina blue
+		AAA: '#3a8bc4', // An Phat Bioplastics blue
+		ANV: '#3a99b5', // Nam Viet Aquaculture teal
+		VHC: '#3aa0a8', // Vinh Hoan teal
+		HSL: '#4a9f5a', // Hoang Son Luna green
+		DPR: '#4aa068', // Dong Phu Rubber green
+	}
+
+	/** Dot color for a VN watchlist row. Equities use the brand map (VCB green, FPT orange, …);
+	 * indices (VN30, VNDIAMOND, HNXINDEX, …) use today's direction — green for up, red for down,
+	 * faint gray for flat / no data. Anything unmapped falls through to the generic VN copper.
+	 * `q` is optional so the dot can render a sane copper before the live quote arrives. */
+	function brandForVnRow(symbol: string, q: StockQuote | IndexQuote | null | undefined): string {
+		if (isVnIndex(symbol)) {
+			const pct = q?.pctChange
+			if (pct === undefined) return 'var(--rl-color-text-faint)'
+			if (pct > 0) return 'var(--rl-color-up)'
+			if (pct < 0) return 'var(--rl-color-down)'
+			return 'var(--rl-color-text-faint)'
+		}
+		return VN_BRAND_COLORS[symbol] ?? 'var(--rl-color-asset-vn100)'
+	}
+
+	// VN-iBoard 5-state price-color rule for the VN-Stock tab. Equity rows ONLY — indices
+	// (VNINDEX / VN30 / VNMID / etc.) have no regulatory band, so their Price cell skips this
+	// rule and renders plain bright.
+	// Order matters: ceiling/floor checks come first so a stock at the band edge isn't misread
+	// as "up/down vs ref"; flat (price === refPrice) is the fallthrough.
+	function computePriceColor(q: StockQuote): 'ceiling' | 'floor' | 'up' | 'down' | 'flat' {
+		if (q.price >= q.ceiling) return 'ceiling'
+		if (q.price <= q.floor) return 'floor'
+		if (q.price > q.refPrice) return 'up'
+		if (q.price < q.refPrice) return 'down'
+		return 'flat'
+	}
+
+	// Smoothly scroll a container element to the bottom — used after appending a watchlist row
+	// so the freshly-added entry lands in the visible window even on a long scrolled-down list.
+	// No-op when `el` is null (the bind:this hasn't resolved yet — defensive guard).
+	function scrollToBottomSmooth(el: HTMLElement | null): void {
+		el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+	}
+
+	function addPlaceholderTab() {
 		const id = nextPlaceholderId++
 		cryptoPlaceholders = [...cryptoPlaceholders, id]
-		cryptoTab = `p:${id}` // jump to the freshly-created blank tab
+		marketsCardTab = `p:${id}` // jump to the freshly-created blank tab
 		tick().then(() => {
-			if (cryptoTabsEl) cryptoTabsEl.scrollLeft = cryptoTabsEl.scrollWidth
+			if (marketsCardTabsEl) marketsCardTabsEl.scrollLeft = marketsCardTabsEl.scrollWidth
 		})
 	}
-	function addStockPlaceholder() {
-		const id = nextPlaceholderId++
-		stockPlaceholders = [...stockPlaceholders, id]
-		stockTab = `p:${id}`
-		tick().then(() => {
-			if (stockTabsEl) stockTabsEl.scrollLeft = stockTabsEl.scrollWidth
-		})
-	}
-	function discardCryptoPlaceholder(id: number) {
+	function discardPlaceholderTab(id: number) {
 		cryptoPlaceholders = cryptoPlaceholders.filter((i) => i !== id)
 		// If the discarded tab was active, fall back to the canonical Binance view.
-		if (cryptoTab === `p:${id}`) cryptoTab = 'binance'
-	}
-	function discardStockPlaceholder(id: number) {
-		stockPlaceholders = stockPlaceholders.filter((i) => i !== id)
-		if (stockTab === `p:${id}`) stockTab = 'VN100'
-	}
-	function commitStockPick(placeholderId: number, symbol: string) {
-		stockPlaceholders = stockPlaceholders.filter((i) => i !== placeholderId)
-		stockTab = symbol
+		if (marketsCardTab === `p:${id}`) marketsCardTab = 'binance'
 	}
 	function removeCryptoSymbol(symbol: string) {
 		tickers.watchlist.removeCrypto(symbol)
 	}
 	function removeStockSymbol(symbol: string) {
 		tickers.watchlist.removeStock(symbol)
-		if (stockTab === symbol) stockTab = 'VN100'
 	}
 
-	// Total open slots = filled watchlist tabs + transient placeholders. Used to gate the +
-	// button so users can't open empty placeholders they couldn't fill anyway. Placeholders
-	// being still-empty count against the cap too — ten new-tabs is enough to be drowning in.
-	const cryptoSlotsUsed = $derived(tickers.watchlist.crypto.length + cryptoPlaceholders.length)
-	const stockSlotsUsed = $derived(tickers.watchlist.stocks.length + stockPlaceholders.length)
-
-	// Chart-tab list — fixed metals/crypto/VN100 anchors plus per-watchlist entries. Memoized via
+	// Chart-tab list — fixed metals/crypto/VN_STOCK_FIXED anchors plus per-watchlist entries. Memoized via
 	// $derived so re-renders unrelated to the watchlist don't rebuild the array (and the
 	// `{#each}` keyed by id can stable-diff on identity).
 	const chartTabs = $derived([
@@ -227,7 +367,7 @@
 			const fmt = formatCryptoDisplay(s)
 			return { id: s, label: fmt.primary + fmt.suffix, accent: brandFor(s) ?? '#6b8aad' }
 		}),
-		{ id: 'VN100', label: 'VN100', accent: '#b87333' },
+		...VN_STOCK_FIXED.map((s) => ({ id: s as string, label: s, accent: CHART_ACCENTS[s] ?? '#b87333' })),
 		...tickers.watchlist.stocks.map((s) => ({ id: s, label: s, accent: '#b87333' })),
 	])
 
@@ -612,58 +752,80 @@
 			<!-- Crypto Card (Binance Spots grid + future blank tabs) -->
 			<div class="tickers-card">
 				<div class="tickers-card-header">
-					<div class="tickers-card-tabs" bind:this={cryptoTabsEl} onwheel={horizontalWheel}>
+					<div class="tickers-card-tabs" bind:this={marketsCardTabsEl} onwheel={horizontalWheel}>
 						<button
 							class="tickers-card-tab tickers-card-tab-binance"
-							class:active={cryptoTab === 'binance'}
-							onclick={() => (cryptoTab = 'binance')}>
+							class:active={marketsCardTab === 'binance'}
+							onclick={() => (marketsCardTab = 'binance')}>
 							Binance
 						</button>
-						<!-- Blank tabs reserved for future content (per-exchange views, etc.). Body is
-						     intentionally empty until a use case lands. -->
+						<button
+							class="tickers-card-tab"
+							class:active-vn100={marketsCardTab === 'vn100'}
+							style:--vn100-accent="var(--rl-color-asset-vn100)"
+							onclick={() => (marketsCardTab = 'vn100')}>
+							VN Stock
+						</button>
+						<!-- Blank tabs reserved for future content (per-exchange views, notes, alerts,
+						     custom panels, etc.). Body is intentionally empty until a use case lands. -->
 						{#each cryptoPlaceholders as id (id)}
 							<span class="tickers-card-tab-wrap" transition:expandX>
 								<button
 									class="tickers-card-tab"
-									class:active={cryptoTab === `p:${id}`}
-									onclick={() => (cryptoTab = `p:${id}`)}>
+									class:active={marketsCardTab === `p:${id}`}
+									onclick={() => (marketsCardTab = `p:${id}`)}>
 									Tab {id}
 								</button>
 								<button
 									class="tickers-card-tab-x"
-									onclick={() => discardCryptoPlaceholder(id)}
+									onclick={() => discardPlaceholderTab(id)}
 									title="Close tab">
 									×
 								</button>
 							</span>
 						{/each}
-						<!-- + creates a new blank tab (future use cases). Adding crypto symbols to the
-						     watchlist is handled by the permanent input row at the Binance grid bottom. -->
-						{#if cryptoSlotsUsed < tickers.watchlist.cap}
+						<!-- + opens a new blank tab (future use cases — notes, alerts, per-exchange views).
+						     Watchlist additions happen via the permanent input row inside each data tab,
+						     not here. Capped at watchlist.cap to prevent runaway blank-tab accumulation. -->
+						{#if cryptoPlaceholders.length < tickers.watchlist.cap}
 							<button
 								class="tickers-card-tab tickers-card-tab-add"
-								onclick={addCryptoPlaceholder}
+								onclick={addPlaceholderTab}
 								title="Open new tab">
 								+
 							</button>
 						{/if}
 					</div>
 					<div class="tickers-card-status">
-						<FreshnessDot elapsed={tickers.cryptoElapsed} ttl={tickers.cryptoTtl} />
-						<button
-							class="tickers-card-refresh"
-							onclick={() => tickers.refreshCrypto()}
-							disabled={fetchingCrypto}
-							title="Refresh crypto">
-							<SpinnerIcon
-								size={10}
-								class={fetchingCrypto ? 'tickers-spinner' : ''}
-								style={fetchingCrypto ? `animation-duration: ${CRYPTO_SPIN_MS}ms` : ''} />
-						</button>
+						{#if marketsCardTab === 'vn100'}
+							<FreshnessDot elapsed={tickers.stocksElapsed} ttl={tickers.stocksTtl} />
+							<button
+								class="tickers-card-refresh"
+								onclick={() => tickers.refreshStocks()}
+								disabled={fetchingStocks}
+								title="Refresh VN stocks">
+								<SpinnerIcon
+									size={10}
+									class={fetchingStocks ? 'tickers-spinner' : ''}
+									style={fetchingStocks ? `animation-duration: ${STOCKS_SPIN_MS}ms` : ''} />
+							</button>
+						{:else}
+							<FreshnessDot elapsed={tickers.cryptoElapsed} ttl={tickers.cryptoTtl} />
+							<button
+								class="tickers-card-refresh"
+								onclick={() => tickers.refreshCrypto()}
+								disabled={fetchingCrypto}
+								title="Refresh crypto">
+								<SpinnerIcon
+									size={10}
+									class={fetchingCrypto ? 'tickers-spinner' : ''}
+									style={fetchingCrypto ? `animation-duration: ${CRYPTO_SPIN_MS}ms` : ''} />
+							</button>
+						{/if}
 					</div>
 				</div>
 
-				{#if cryptoTab === 'binance'}
+				{#if marketsCardTab === 'binance'}
 					<div class="tickers-crypto-spots-scroll" bind:this={cryptoSpotsScrollEl}>
 						<div class="tickers-crypto-spots-grid">
 							<!-- Top header (mirrors Bullion / VCB Forex pattern). Sticky so the legend
@@ -766,12 +928,7 @@
 													cryptoInputKey += 1
 													// Scroll the freshly-appended row into view — without this, on a long
 													// scrolled-down list the new entry would land below the visible window.
-													tick().then(() => {
-														cryptoSpotsScrollEl?.scrollTo({
-															top: cryptoSpotsScrollEl.scrollHeight,
-															behavior: 'smooth',
-														})
-													})
+													tick().then(() => scrollToBottomSmooth(cryptoSpotsScrollEl))
 												}}
 												onClose={() => (cryptoInputKey += 1)}
 												minWidthCh={6} />
@@ -781,156 +938,147 @@
 							{/if}
 						</div>
 					</div>
-				{:else if cryptoTab.startsWith('p:')}
+				{:else if marketsCardTab === 'vn100'}
+					<div class="tickers-stock-spots-scroll" bind:this={stockSpotsScrollEl}>
+						<div class="tickers-stock-spots-grid">
+							<!-- Top header (mirrors Bullion / VCB Forex / Binance pattern). Sticky so the
+							     legend stays visible while watchlist rows scroll past. -->
+							<div class="tickers-table-header tickers-stock-spots-header">
+								<span></span>
+								<span></span>
+								<span class="tickers-table-col-label">Floor</span>
+								<span class="tickers-table-col-label">Ceil</span>
+								<span class="tickers-table-col-label">Price</span>
+								<span class="tickers-table-col-label">%Chg</span>
+								<span></span>
+							</div>
+
+							<!-- Fixed rows (VN_STOCK_FIXED): VNINDEX, VN30, VNMID, VCB — analog to BTC/ETH/SOL
+							     on the Binance tab. Mix of indices (VNINDEX, VN30, VNMID — Floor/Ceil → `—`, plain bright
+							     Price) and equities (VCB — Floor/Ceil from StockQuote with the VN-iBoard
+							     5-state Price color rule). The brand dot is directional for indices (via
+							     brandForVnRow's isVnIndex branch) and brand-colored for equities (VCB green).
+							     Col 7 left empty — fixed rows can't be removed via ×. Type-guard via
+							     `'price' in q` mirrors the watchlist row block below. -->
+							{#each VN_STOCK_FIXED as symbol (symbol)}
+								{@const q = tickers.getStockQuote(symbol)}
+								<span class="tickers-stock-spots-dot" style:--dot={brandForVnRow(symbol, q)}></span>
+								<span class="tickers-stock-spots-asset">{symbol}</span>
+								{#if q && 'price' in q}
+									{@const priceColor = computePriceColor(q)}
+									<span class="tickers-stock-spots-num">{formatStockPrice(q.floor)}</span>
+									<span class="tickers-stock-spots-num">{formatStockPrice(q.ceiling)}</span>
+									<span class="tickers-stock-spots-price" data-color={priceColor}>
+										{formatStockPrice(q.price)}
+									</span>
+									<span
+										class="tickers-stock-spots-pct"
+										class:up={q.pctChange > 0}
+										class:down={q.pctChange < 0}>
+										{formatPctSigned(q.pctChange)}
+									</span>
+								{:else if q}
+									<span class="tickers-stock-spots-num">—</span>
+									<span class="tickers-stock-spots-num">—</span>
+									<span class="tickers-stock-spots-price">{formatVnIndex(q.close)}</span>
+									<span
+										class="tickers-stock-spots-pct"
+										class:up={q.change > 0}
+										class:down={q.change < 0}>
+										{formatPctSigned(q.pctChange)}
+									</span>
+								{:else}
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-5 w-full" />
+									<Skeleton class="h-4 w-full" />
+								{/if}
+								<span></span><!-- col 7 empty: fixed row, no × -->
+							{/each}
+
+							<!-- Rows N+1..: watchlist VN entries — equities (StockQuote) AND indices like VN30
+							     / VNDIAMOND (IndexQuote, routed via fetchIndexQuote). Same type-guarded shape
+							     as the fixed rows above; the only divergence is col 7 (× button for removal). -->
+							{#each tickers.watchlist.stocks as symbol (symbol)}
+								{@const q = tickers.getStockQuote(symbol)}
+								<span class="tickers-stock-spots-dot" style:--dot={brandForVnRow(symbol, q)}></span>
+								<span class="tickers-stock-spots-asset">{symbol}</span>
+								{#if q && 'price' in q}
+									{@const priceColor = computePriceColor(q)}
+									<span class="tickers-stock-spots-num">{formatStockPrice(q.floor)}</span>
+									<span class="tickers-stock-spots-num">{formatStockPrice(q.ceiling)}</span>
+									<span class="tickers-stock-spots-price" data-color={priceColor}>
+										{formatStockPrice(q.price)}
+									</span>
+									<span
+										class="tickers-stock-spots-pct"
+										class:up={q.pctChange > 0}
+										class:down={q.pctChange < 0}>
+										{formatPctSigned(q.pctChange)}
+									</span>
+								{:else if q}
+									<span class="tickers-stock-spots-num">—</span>
+									<span class="tickers-stock-spots-num">—</span>
+									<span class="tickers-stock-spots-price">{formatVnIndex(q.close)}</span>
+									<span
+										class="tickers-stock-spots-pct"
+										class:up={q.change > 0}
+										class:down={q.change < 0}>
+										{formatPctSigned(q.pctChange)}
+									</span>
+								{:else}
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-5 w-full" />
+									<Skeleton class="h-4 w-full" />
+								{/if}
+								<button
+									class="tickers-stock-spots-x"
+									onclick={() => removeStockSymbol(symbol)}
+									aria-label="Remove {symbol}">
+									×
+								</button>
+							{/each}
+
+							<!-- Permanent input row at the table bottom while watchlist has room. Pick a
+							     suggestion → symbol joins the watchlist rows above; input clears via the
+							     `{#key}` remount and is ready for the next entry. -->
+							{#if tickers.watchlist.stocks.length < tickers.watchlist.cap}
+								<div class="tickers-stock-spots-input-row">
+									<span class="tickers-stock-spots-input-icon" aria-hidden="true">+</span>
+									<div class="tickers-stock-spots-input-wrapper">
+										{#key stockInputKey}
+											<TickerTabInput
+												type="stock"
+												add={(symbol) => {
+													const ok = tickers.watchlist.addStock(symbol)
+													// Single-symbol fetch — re-pulling every existing row would waste two
+													// SSI round-trips per current row. Fire-and-forget; the row appears
+													// with a Skeleton until ~150–250ms later. fetchOneStock auto-routes
+													// indices (VN30, VNDIAMOND, …) to the index endpoint internally.
+													if (ok) tickers.fetchOneStock(symbol)
+													return ok
+												}}
+												has={(s) => tickers.watchlist.hasStock(s) || RESERVED_STOCKS.has(s)}
+												onPick={() => {
+													stockInputKey += 1
+													// Auto-scroll the freshly-appended row into view — without this, on
+													// a long scrolled-down list the new entry would land below the
+													// visible window (sticky input row hides it otherwise).
+													tick().then(() => scrollToBottomSmooth(stockSpotsScrollEl))
+												}}
+												onClose={() => (stockInputKey += 1)}
+												minWidthCh={6} />
+										{/key}
+									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{:else if marketsCardTab.startsWith('p:')}
 					<!-- Blank tab body — empty for now, reserved for future use cases. -->
 					<div class="tickers-crypto-blank-tab">
 						<span class="tickers-crypto-blank-tab-hint">Empty tab — content coming soon.</span>
-					</div>
-				{/if}
-			</div>
-
-			<!-- VN100 Card -->
-			<div class="tickers-card">
-				<div class="tickers-card-header">
-					<div class="tickers-card-tabs" bind:this={stockTabsEl} onwheel={horizontalWheel}>
-						<button
-							class="tickers-card-tab"
-							class:active-vn100={stockTab === 'VN100'}
-							style:--vn100-accent="var(--rl-color-asset-vn100)"
-							onclick={() => (stockTab = 'VN100')}>
-							VN100
-						</button>
-						{#each tickers.watchlist.stocks as symbol (symbol)}
-							<span class="tickers-card-tab-wrap" transition:expandX>
-								<button
-									class="tickers-card-tab tickers-card-tab-watchlist"
-									class:active={stockTab === symbol}
-									onclick={() => (stockTab = symbol)}>
-									{symbol}
-								</button>
-								<button
-									class="tickers-card-tab-x"
-									onclick={() => removeStockSymbol(symbol)}
-									title="Remove from watchlist">
-									×
-								</button>
-							</span>
-						{/each}
-						{#each stockPlaceholders as id (id)}
-							<span class="tickers-card-tab-wrap" transition:expandX>
-								<TickerTabInput
-									type="stock"
-									add={tickers.watchlist.addStock}
-									has={tickers.watchlist.hasStock}
-									onPick={(symbol) => commitStockPick(id, symbol)}
-									onClose={() => discardStockPlaceholder(id)} />
-								<button
-									class="tickers-card-tab-x"
-									onclick={() => discardStockPlaceholder(id)}
-									title="Discard">
-									×
-								</button>
-							</span>
-						{/each}
-						{#if stockSlotsUsed < tickers.watchlist.cap}
-							<button
-								class="tickers-card-tab tickers-card-tab-add"
-								onclick={addStockPlaceholder}
-								title="Add VN ticker">
-								+
-							</button>
-						{/if}
-					</div>
-					<div class="tickers-card-status">
-						<FreshnessDot elapsed={tickers.stocksElapsed} ttl={tickers.stocksTtl} />
-						<button
-							class="tickers-card-refresh"
-							onclick={() => tickers.refreshStocks()}
-							disabled={fetchingStocks}
-							title="Refresh VN100">
-							<SpinnerIcon
-								size={10}
-								class={fetchingStocks ? 'tickers-spinner' : ''}
-								style={fetchingStocks ? `animation-duration: ${STOCKS_SPIN_MS}ms` : ''} />
-						</button>
-					</div>
-				</div>
-
-				{#if stockTab.startsWith('p:')}
-					<!-- Empty body while user types in the tab-strip input; popover shows results there. -->
-				{:else if !FIXED_STOCK.has(stockTab)}
-					{@const q = tickers.getStockQuote(stockTab)}
-					{#if q}
-						{@const up = q.pctChange >= 0}
-						<div class="tickers-price-row">
-							<span class="tickers-price-label">Price</span>
-							<div class="tickers-price-value-wrap">
-								<span class="tickers-price-value tickers-crypto-price"
-									>{formatStockPrice(q.price)}</span>
-								<span class="tickers-price-unit">VND</span>
-							</div>
-						</div>
-						<div class="tickers-price-row">
-							<span class="tickers-price-label">Change</span>
-							<div class="tickers-price-value-wrap">
-								<span class="tickers-crypto-change" class:up class:down={!up}>
-									{up ? '+' : ''}{formatStockPrice(q.change)}
-								</span>
-								<span class="tickers-crypto-pct" class:up class:down={!up}>
-									({up ? '+' : ''}{q.pctChange.toFixed(2)}%)
-								</span>
-							</div>
-						</div>
-						<div class="tickers-crypto-range">
-							<span class="tickers-crypto-range-pair">
-								<span class="tickers-crypto-range-label">Ref</span>
-								<span class="tickers-crypto-range-value">{formatStockPrice(q.refPrice)}</span>
-							</span>
-							<span class="tickers-crypto-range-pair">
-								<span class="tickers-crypto-range-label">Vol</span>
-								<span class="tickers-crypto-range-value"
-									>{compactNumberFormat.format(q.accumulatedVol)}</span>
-							</span>
-						</div>
-					{:else}
-						<div class="tickers-price-row">
-							<Skeleton class="h-6 w-32" />
-						</div>
-					{/if}
-				{:else if tickers.vn100Quote}
-					{@const q = tickers.vn100Quote}
-					{@const up = q.change >= 0}
-					<div class="tickers-price-row">
-						<span class="tickers-price-label">Close</span>
-						<div class="tickers-price-value-wrap">
-							<span class="tickers-price-value tickers-crypto-price">{formatVN100(q.close)}</span>
-							<span class="tickers-price-unit">PTS</span>
-						</div>
-					</div>
-					<div class="tickers-price-row">
-						<span class="tickers-price-label">Change</span>
-						<div class="tickers-price-value-wrap">
-							<span class="tickers-crypto-change" class:up class:down={!up}>
-								{up ? '+' : ''}{formatVN100(q.change)}
-							</span>
-							<span class="tickers-crypto-pct" class:up class:down={!up}>
-								({up ? '+' : ''}{q.pctChange.toFixed(2)}%)
-							</span>
-						</div>
-					</div>
-					<div class="tickers-crypto-range">
-						<span class="tickers-crypto-range-pair">
-							<span class="tickers-crypto-range-label">L</span>
-							<span class="tickers-crypto-range-value">{formatVN100(q.low)}</span>
-						</span>
-						<span class="tickers-crypto-range-pair">
-							<span class="tickers-crypto-range-label">H</span>
-							<span class="tickers-crypto-range-value">{formatVN100(q.high)}</span>
-						</span>
-					</div>
-				{:else}
-					<div class="tickers-price-row">
-						<Skeleton class="h-6 w-32" />
 					</div>
 				{/if}
 			</div>
@@ -1075,19 +1223,29 @@
 		   in its row (stock card at the 2-col breakpoint, any card on mobile) has nothing to match
 		   against. 215px ≈ the filled metals/crypto body height — see +page.svelte body rendering. */
 		min-height: 215px;
-		transition: background var(--rl-duration-short) var(--rl-ease-move);
-	}
-	/* Hard-cap the dashboard's top-row pair (Bullion + Binance) at 20rem (320px) so the two
-	   cards sit pixel-flush regardless of content density. `:nth-child(-n+2)` targets only
-	   the first two children of `.tickers-cards` (= row 1 at the 640px+ 2-col breakpoint);
-	   the VN100 card (3rd child, row 2 at 1fr 1fr) keeps its natural content-driven height.
-	   flex-column lets the body slot fill any leftover space — Binance's scroll container
-	   takes it via `flex: 1`, Bullion's groups stack from the top and a tiny tail of empty
-	   space (~2px) sits below the footer-note. */
-	.tickers-cards > .tickers-card:nth-child(-n + 2) {
-		height: 20rem;
+		/* Flex-column lets a flex:1 child (e.g. .tickers-crypto-spots-scroll on the Markets card)
+		   absorb any leftover vertical space when the card hits its max-height cap. Bullion's
+		   metal-groups grid stacks from the top and the cap rarely engages thanks to the sub-panel's
+		   own internal scroll. */
 		display: flex;
 		flex-direction: column;
+		transition: background var(--rl-duration-short) var(--rl-ease-move);
+	}
+	/* Cap dashboard cards (Bullion + Markets) at 480px = 3:4 of a 360px mobile viewport — keeps
+	   the dashboard's first fold proportional regardless of how packed the watchlist is. Below
+	   the cap each card sizes to its own content; above the cap, the inner scrollers take over:
+	   Markets via `.tickers-crypto-spots-scroll { flex: 1; min-height: 0 }`, Bullion via the
+	   sub-panel's own max-height (sized so the four main rows + sub-panel + footer rarely exceed
+	   480px even with the panel expanded). */
+	.tickers-cards > .tickers-card {
+		max-height: 480px;
+	}
+	/* Bullion's expanded form (sub-panel showing 10 foreign-currency rows) needs ~530px total —
+	   the 480px global cap was clipping the sub-panel to ~7 rows. Raise the first-child cap to
+	   540px so 10 sub-rows fit comfortably. Markets (second child) stays at 480 since its scroll
+	   container handles overflow internally. */
+	.tickers-cards > .tickers-card:first-child {
+		max-height: 540px;
 	}
 	/* Halfway lift between `--rl-color-surface` (#171717) and `--rl-color-surface-raised`
 	   (#262626). The full raised value was crowding the row:hover overlay (7% white), leaving
@@ -1169,7 +1327,11 @@
 	}
 	.tickers-card-tab {
 		font-family: var(--rl-font-sans);
-		font-size: var(--rl-text-sm);
+		/* Fixed 12px — tab labels (Bullion / VCB Forex / Binance / VN Stock) read identically on
+		   mobile and desktop. Per the hybrid rem/px policy: dense data UI in viewport-capped
+		   layouts opts out of root-font scaling for visual parity. See references/coding-prefs/
+		   rem-by-default.md. */
+		font-size: 12px;
 		font-weight: var(--rl-font-semibold);
 		letter-spacing: 0.3px;
 		/* Min-width equalizes 3-char tabs (BTC/ETH/SOL) and the placeholder to one footprint. */
@@ -1219,17 +1381,6 @@
 		display: inline-flex;
 		align-items: stretch;
 	}
-	.tickers-card-tab-watchlist {
-		font-family: var(--rl-font-mono);
-		letter-spacing: -0.2px;
-		padding-right: 2px;
-	}
-	.tickers-card-tab-watchlist.active {
-		color: var(--rl-color-text);
-		border-bottom-color: var(--rl-color-border-strong);
-	}
-	/* Placeholder tab is now rendered by TickerTabInput (inline input + popover suggestions).
-	   The old .tickers-card-tab-placeholder button class is no longer used. */
 	.tickers-card-tab-x {
 		font-family: var(--rl-font-mono);
 		font-size: var(--rl-text-md); /* bumped from sm — × is a hit target, deserves a bit more weight */
@@ -1336,11 +1487,9 @@
 		column-gap: 10px;
 		row-gap: var(--rl-space-xs);
 		padding: var(--rl-space-sm) 0 0;
-		/* No negative margin — the table stays inside the card's 20px padding. Expand/collapse
-		   stability still holds thanks to the `minmax(0, 1fr)` track definition above, which
-		   prevents sub-row content from growing columns. The card's padding gives the numeric
-		   columns a visible gutter from the card border, and the chevron (col 7) lands at the
-		   card's inner padding edge rather than pressed against the border. */
+		/* No flex / no scroll — card sizes to its content. The four main rows + sub-panel +
+		   footer all stack vertically; the sub-panel's own `max-height: 14rem` + inner scroll
+		   keeps the foreign-currency list compact when expanded. */
 	}
 	/* Header, data rows, AND sub-rows are each their own subgrid inheriting the parent's
 	   7 tracks. Subgrid preserves column alignment automatically — main row "Gold 167.500"
@@ -1412,19 +1561,21 @@
 	.tickers-metal-label {
 		display: flex;
 		flex-direction: column;
-		font-size: var(--rl-text-xs);
+		/* Fixed 11px — locks the metal-name typography to identical rendering on mobile and
+		   desktop. Was --rl-text-xs which rendered 11px desktop / 9.6px mobile. Same hybrid-policy
+		   reason as the rest of the Bullion card's typography — see references/coding-prefs/
+		   rem-by-default.md (px for dense data UI in viewport-capped layouts). */
+		font-size: 11px;
 		font-weight: var(--rl-font-semibold);
 		color: var(--rl-color-text);
 		letter-spacing: 0.2px;
 		line-height: 1.15;
 	}
 	.tickers-metal-unit {
-		/* 0.5625rem — one notch below `--rl-text-2xs` (0.625rem / 10px desktop, 8.75px mobile).
-		   Rem-based so the unit hint scales in lockstep with the rest of the type system when the
-		   root drops to 14px at ≤720px. Units are a supporting whisper under each metal label
-		   (lượng / kg / chỉ) — deliberately quieter than the smallest token so the metal name
-		   stays the clear anchor of the row's identity. */
-		font-size: 0.5625rem;
+		/* Fixed 9px — was 0.5625rem (9px desktop / 7.9px mobile). Units are a supporting whisper
+		   under each metal label (lượng / kg / chỉ) — deliberately quieter than the metal name
+		   but still legible on mobile. 9px is the readability floor for a non-essential label. */
+		font-size: 9px;
 		font-weight: var(--rl-font-normal);
 		color: var(--rl-color-text-subtle);
 		letter-spacing: 0.3px;
@@ -1441,9 +1592,11 @@
 		background: var(--rl-color-surface);
 	}
 	/* Shared table column label — same typography in bullion + forex so the two cards feel like
-	   they're on the same design grid. Kept generic so future tables can reuse. */
+	   they're on the same design grid. Fixed 10px (was --rl-text-2xs = 10px desktop / 8.75px
+	   mobile) for cross-viewport parity in dense data UI; see references/coding-prefs/
+	   rem-by-default.md. Future tables that adopt this class get the locked typography too. */
 	.tickers-table-col-label {
-		font-size: var(--rl-text-2xs);
+		font-size: 10px;
 		font-weight: var(--rl-font-medium);
 		color: var(--rl-color-text-subtle);
 		text-transform: uppercase;
@@ -1455,7 +1608,10 @@
 	   gap provide enough breathing room naturally. */
 	.tickers-metal-value {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-sm);
+		/* Fixed 12px — locks BUY/SELL/AVG digits to identical width on mobile and desktop. Was
+		   --rl-text-sm = 12px desktop / 10.5px mobile; the rem-shrink made VND amounts noticeably
+		   harder to read on phones. Same px-fixed reasoning as VCB Forex `.tickers-forex-num`. */
+		font-size: 12px;
 		font-weight: var(--rl-font-medium);
 		font-variant-numeric: tabular-nums;
 		letter-spacing: -0.3px;
@@ -1500,7 +1656,13 @@
 		grid-column: 1 / -1;
 		display: grid;
 		grid-template-columns: subgrid;
-		max-height: 14rem;
+		/* Sized to expose exactly 10 foreign-currency rows. Row pitch ≈ 22.3px @ 11px font +
+		   line-height 1.3 + 4+4 pad. 10 × 22.3 + 4 panel padding-top + 1 border-top ≈ 228px.
+		   Sub-row font is fixed-px (not rem) so the visible count stays stable across the
+		   14px-mobile / 16px-desktop root-font split — same pattern as VCB Forex tab; see
+		   references/coding-prefs/rem-by-default.md. The remaining 10 currencies (CHF onward)
+		   are reachable via the panel's internal scrollbar. */
+		max-height: 228px;
 		overflow-y: auto;
 		scrollbar-gutter: stable;
 		scrollbar-width: thin;
@@ -1514,7 +1676,12 @@
 		grid-column: 1 / -1;
 		grid-template-columns: subgrid;
 		align-items: center;
+		/* line-height: 1.3 keeps the row compact enough to fit exactly 10 sub-rows in the
+		   sub-panel viewport (vs the browser default ~1.5 which only fit 7-8). 1.3 is the
+		   readability floor — tighter starts to feel squashed for VND amounts that drop below
+		   the baseline. Padding stays at 4px (comfortable, matches VCB Forex card's choice). */
 		padding: 4px 0;
+		line-height: 1.3;
 	}
 	/* Flag cell — lives in col 1 like the parent row's ingot, right-justified so the flag's
 	   right edge sits flush against the col 1/col 2 boundary. This mirrors `.tickers-metal-flag`
@@ -1540,19 +1707,21 @@
 	   flex-align center keeps it vertically centered alongside the flag. */
 	.tickers-bullion-sub-code {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-2xs);
+		/* Fixed 11px (vs the previous --rl-text-2xs rem token, which scaled to 8.75px on mobile
+		   — too small to read comfortably). Same mobile/desktop typography rationale as VCB Forex
+		   tab — see references/coding-prefs/rem-by-default.md for the hybrid policy: dense data
+		   UI in viewport-capped layouts opts out of root-font scaling for visual parity. */
+		font-size: 11px;
 		font-weight: var(--rl-font-medium);
 		color: var(--rl-color-text-subtle);
 		letter-spacing: 0.3px;
 	}
 	.tickers-bullion-sub-value {
 		font-family: var(--rl-font-mono);
-		/* 2xs (10px desktop / 8.75px mobile) — one notch below main row values. Foreign-currency
-		   equivalents like JPY/KRW run 7-digit ("9.344.954"), and at text-xs (11px) they brushed
-		   against adjacent columns on narrower viewports. 2xs gives the tabular-nums layout room
-		   to breathe without looking out of scale — the foreign figures are supplementary context,
-		   not primary data. */
-		font-size: var(--rl-text-2xs);
+		/* Fixed 11px — same px-fixed reasoning as `.tickers-bullion-sub-code` above. Foreign-
+		   currency equivalents like JPY/KRW run 7-digit ("9.344.954"); at 11px they have just
+		   enough room without crowding adjacent columns on narrower viewports. */
+		font-size: 11px;
 		font-variant-numeric: tabular-nums;
 		letter-spacing: -0.2px;
 		color: var(--rl-color-text-subtle);
@@ -1588,7 +1757,9 @@
 	}
 	.tickers-metal-footer-note {
 		margin-top: auto;
-		font-size: var(--rl-text-2xs);
+		/* Fixed 10px — matches the column-header label scale, locking the entire Bullion card's
+		   typography to identical rendering on mobile and desktop. */
+		font-size: 10px;
 		color: var(--rl-color-text-faint);
 		padding-top: var(--rl-space-xs);
 		letter-spacing: 0.3px;
@@ -1617,11 +1788,13 @@
 	.tickers-forex-table {
 		display: flex;
 		flex-direction: column;
-		/* 18rem targets exactly 10 visible pair rows at desktop's 16px root (288px) with CAD as
-		   the last fully-visible row and a tiny sliver of HKD peeking to signal the table scrolls.
-		   On mobile (14px root) this shrinks to 252px, showing ~9–10 rows — acceptable since the
-		   phone viewport has ample vertical space for scrolling when the user wants more. */
-		max-height: 18rem;
+		/* Sized to expose exactly 10 pair rows (USD–CAD) with no peek of the 11th. At the row
+		   pitch of ~27.2px (12px font + line-height 1.2 + 6+6 pad) plus header (~20), first-row
+		   margin (4), 9 inter-row borders (9), and the Tier A→B divider extra (~5px), 10 rows
+		   land at ~310px exactly — tuning to fit-cleanly without HKD peeking. The remaining 10
+		   currencies (HKD, CHF, MYR, INR, DKK, SEK, NOK, SAR, KWD, RUB) are reachable via the
+		   table's internal scroll. */
+		max-height: 294px;
 		overflow-y: auto;
 		scrollbar-gutter: stable;
 		scrollbar-width: thin;
@@ -1652,21 +1825,22 @@
 		z-index: 1;
 	}
 	.tickers-forex-row {
-		/* Token-based 4px (--rl-space-xs = 0.25rem) vertical padding — dense enough to surface
-		   ≥10 currency pairs at first sight, comfortable enough to read cleanly. Rows are
-		   non-interactive (no tap target), so density wins over padding comfort, but 2px was too
-		   cramped. padding-inline-end still matches the header so the 24h column stays clear of
-		   the scrollbar gutter. */
-		padding: var(--rl-space-xs) var(--rl-space-sm) var(--rl-space-xs) 0;
+		/* 6px vertical padding + explicit line-height: 1.2 = comfortable density:
+		   row content ≈ 14.4px (line-height) + 12px (6+6 pad) → ~26.4px row pitch on desktop.
+		   Sized so ~12 rows (USD through CHF, the full Tier A + Tier B set) sit in the 360px
+		   table viewport. The line-height: 1.2 (vs the 1.5 browser default) keeps the row tight
+		   enough to fit Tier A+B without cramping each individual row. */
+		padding: 6px var(--rl-space-sm) 6px 0;
+		line-height: 1.2;
 		border-top: 1px solid rgba(255, 255, 255, 0.04);
 	}
 	/* Header + row live side-by-side in the same flex container, so `.tickers-forex-row:first-child`
 	   never matches (the header is the first child). Use the adjacent-sibling combinator to target
 	   the row immediately after the header — that's USD, the actual first data row. */
 	.tickers-forex-header + .tickers-forex-row {
-		/* Margin-top gives USD breathing space under the sticky header's bottom border so the
-		   first data row reads as its own band rather than glued to the label row. Matches the
-		   --rl-space-xs rhythm used for row padding, keeping vertical cadence consistent. */
+		/* Margin-top gives USD breathing space under the sticky header so the first data row
+		   reads as its own band rather than glued to the label row. Matches the --rl-space-xs
+		   rhythm (4px) used for row padding, keeping vertical cadence consistent. */
 		border-top: none;
 		margin-top: var(--rl-space-xs);
 	}
@@ -1689,20 +1863,28 @@
 	}
 	.tickers-forex-flag img {
 		display: block;
-		width: 18px;
-		height: 18px;
+		/* 14×14 (was 18×18) shrinks the row's controlling vertical extent so font line-height
+		   becomes the height driver instead of the flag — required for the 10-row fit in 224px.
+		   Round-flag identity remains legible at 14px alongside the 3-letter currency code. */
+		width: 14px;
+		height: 14px;
 		border-radius: 50%;
 	}
 	.tickers-forex-code {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-sm);
+		/* Fixed 12px (= --rl-text-sm at 16px desktop root) instead of the rem token so the forex
+		   card's typography stays identical between mobile (14px root) and desktop. The rest of
+		   the dashboard scales with the project's root-font breakpoint at 720px; this card opts
+		   out so its row pitch is identical across viewports — required for a single max-height
+		   to clip exactly 10 rows on both. */
+		font-size: 12px;
 		font-weight: var(--rl-font-bold);
 		letter-spacing: -0.2px;
 		color: var(--rl-color-text);
 	}
 	.tickers-forex-num {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-sm);
+		font-size: 12px;
 		font-weight: var(--rl-font-medium);
 		font-variant-numeric: tabular-nums;
 		letter-spacing: -0.3px;
@@ -1726,48 +1908,6 @@
 		color: var(--rl-color-text-faint);
 	}
 
-	/* Price rows */
-	.tickers-price-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		padding: 10px 0;
-	}
-	.tickers-price-row + .tickers-price-row {
-		border-top: 1px solid rgba(255, 255, 255, 0.04);
-	}
-	.tickers-price-label {
-		font-size: var(--rl-text-xs);
-		font-weight: var(--rl-font-medium);
-		color: var(--rl-color-text-subtle);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		min-width: 40px;
-	}
-	.tickers-price-value-wrap {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-	}
-	.tickers-price-value {
-		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-2xl);
-		font-weight: var(--rl-font-bold);
-		font-variant-numeric: tabular-nums;
-		letter-spacing: -0.5px;
-		color: var(--rl-color-text);
-	}
-	@media (min-width: 640px) {
-		.tickers-price-value {
-			font-size: 22px;
-		}
-	}
-	.tickers-price-unit {
-		font-size: var(--rl-text-2xs);
-		color: var(--rl-color-text-subtle);
-	}
-
-	/* Spread */
 	/* 24H change cell inside the metal table (column 4). Right-aligned to match the column
 	   header and keep numeric rhythm. Colored up/down/flat using the same semantic tokens as
 	   the crypto card's 24H change. */
@@ -1777,7 +1917,9 @@
 		justify-content: flex-end;
 		align-self: center;
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-sm);
+		/* Fixed 12px — matches `.tickers-metal-value` and `.tickers-forex-num` so the entire
+		   Bullion-card numeric grid renders at identical size mobile and desktop. */
+		font-size: 12px;
 		font-weight: var(--rl-font-semibold);
 		color: var(--rl-color-text-faint);
 		font-variant-numeric: tabular-nums;
@@ -2028,67 +2170,6 @@
 		border-color: var(--rl-color-text-faint);
 	}
 
-	/* Crypto */
-	.tickers-crypto-price {
-		font-size: var(--rl-text-xl);
-	}
-	@media (min-width: 640px) {
-		.tickers-crypto-price {
-			font-size: var(--rl-text-lg);
-		}
-	}
-	.tickers-crypto-change {
-		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-base);
-		font-weight: var(--rl-font-bold);
-		font-variant-numeric: tabular-nums;
-	}
-	.tickers-crypto-change.up {
-		color: var(--rl-color-up);
-	}
-	.tickers-crypto-change.down {
-		color: var(--rl-color-down);
-	}
-	.tickers-crypto-pct {
-		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-2xs);
-		font-weight: var(--rl-font-medium);
-		font-variant-numeric: tabular-nums;
-	}
-	.tickers-crypto-pct.up {
-		color: var(--rl-color-up);
-	}
-	.tickers-crypto-pct.down {
-		color: var(--rl-color-down);
-	}
-	.tickers-crypto-range {
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		gap: var(--rl-space-md);
-		padding-top: 12px;
-		margin-top: var(--rl-space-xs);
-		border-top: 1px solid var(--rl-color-border);
-	}
-	.tickers-crypto-range-pair {
-		display: flex;
-		align-items: center;
-		gap: 5px;
-	}
-	.tickers-crypto-range-label {
-		font-size: var(--rl-text-2xs);
-		color: var(--rl-color-text-subtle);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-	}
-	.tickers-crypto-range-value {
-		font-family: var(--rl-font-mono);
-		font-size: 13px;
-		font-weight: var(--rl-font-semibold);
-		color: var(--rl-color-spread);
-		font-variant-numeric: tabular-nums;
-	}
-
 	/* Crypto Spots — consolidated grid: BTC/ETH/SOL fixed rows + watchlist rows + permanent
 	   input row at the bottom. 7 cols: dot · symbol · LOW · HIGH · PRICE · 24H% · ×. Col 1
 	   is 14px — just enough for the 10px brand dot with a 4px breathing strip on the right.
@@ -2099,7 +2180,34 @@
 	   fixed rows and the header band). */
 	.tickers-crypto-spots-grid {
 		display: grid;
-		grid-template-columns: 14px minmax(2.25rem, auto) 1fr 1fr 1fr 1fr 16px;
+		/* Col 1 = 10px (= dot's exact diameter, no right-side breathing strip). The dot→symbol
+		   distance is then the column-gap alone (10px) instead of 14px (4px breathing + 10px gap).
+		   Donates the freed 4px to the four numeric tracks. Input row's `+` glyph still anchors
+		   at col 1's left via `justify-self: start` and visually aligns with the dots above —
+		   the `+` is 7–9px in `--rl-text-md` so 10px hosts it cleanly without overflow.
+		   Col 2 fixed at 4.5rem (~63px at 14px root, ~72px at 16px root) — sized to fit the
+		   longest realistic symbol (`VNDIAMOND` at 9 chars ≈ 63px in mono `--rl-text-sm`) with
+		   ~zero buffer; `text-overflow: ellipsis` on the asset cell catches anything wider. A
+		   previous 5rem (~80px) was wider than necessary and shrank the four numeric tracks for
+		   no content benefit. Fixed width (vs `minmax(2.25rem, auto)`) keeps the numeric tracks
+		   invariant across add/remove of long-symbol watchlist rows.
+		   Numeric track ratio `1fr 1fr 1fr 0.9fr` (LOW · HIGH · PRICE · 24H). All three numeric
+		   tracks are equal because in mono with `font-variant-numeric: tabular-nums`, every digit
+		   has the same advance width — Price's bolder weight doesn't widen `$78.477` vs `$76.204`
+		   even at the same fontSize, so a Price-only fr bump just leaves dead space inside that
+		   cell. 24H is the only consistently-shorter content (`+99,99%` max, ~43px intrinsic at
+		   `--rl-text-sm`) and surrenders 10% to keep all numeric cells with comparable slack at
+		   both root font sizes (14px mobile / 16px desktop): 25–30px slack at mobile, 3–8px at
+		   the tighter desktop 2-column layout.
+		   Col 7 = 8px. Sized so the × button (anchored to col 7's right edge via `justify-self:
+		   end` + a -4px right margin overflow) lands ~6px right of the %CHG content right edge —
+		   close enough to read as "right-end of the row" yet not crowding the percent value. A
+		   previous 16px col 7 stacked an extra ~10px gap before the × (col-gap 10 + col 7 16 =
+		   26px from %CHG content right to × glyph) which read as wasted space; collapsing to 0
+		   put × literally touching the percent sign. 8px is the goldilocks middle. Combined with
+		   `scrollbar-gutter: stable` dropped on the parent scroll container, the × sits ~12–17px
+		   from the card's outer right edge (vs ~27px before). */
+		grid-template-columns: 10px 4.5rem 1fr 1fr 1fr 0.9fr 8px;
 		column-gap: 10px;
 		row-gap: 12px;
 		align-items: center;
@@ -2116,7 +2224,11 @@
 		min-height: 0;
 		overflow-y: auto;
 		overflow-x: hidden;
-		scrollbar-gutter: stable;
+		/* No `scrollbar-gutter: stable` — reserves ~10px of right-edge dead space even when no
+		   scrollbar is rendered, which combined with col 7 + col-gap put the × button uncomfortably
+		   far from the card's visual right edge. Trade-off: when the watchlist fills enough rows
+		   to scroll, the thin scrollbar appears and the rightmost content (× / %CHG) shifts left
+		   by ~10px. That's an acceptable transition signal — it reads as "more rows below". */
 		scrollbar-width: thin;
 		scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
 	}
@@ -2153,11 +2265,16 @@
 	}
 	.tickers-crypto-spots-asset {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-sm);
+		/* Fixed 12px — same px-fixed reasoning as the rest of the Markets card; locks identifier
+		   typography across mobile and desktop. */
+		font-size: 12px;
 		font-weight: var(--rl-font-semibold);
 		letter-spacing: -0.2px;
 		color: var(--rl-color-text);
 		white-space: nowrap;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	/* Quote suffix on watchlist rows (e.g. "/BTC", "/USDC") — Binance-mobile style: smaller,
 	   muted, sits flush with the base label so the pair reads as one token. */
@@ -2168,10 +2285,11 @@
 		margin-inline-start: 1px;
 	}
 	/* LOW / HIGH — match Bullion's Buy/Sell treatment: same size as PRICE, lighter weight,
-	   muted color. The hierarchy reads as "reference cells" against the brighter PRICE headline. */
+	   muted color. The hierarchy reads as "reference cells" against the brighter PRICE headline.
+	   Fixed 12px (was --rl-text-sm) for cross-viewport parity in dense data UI. */
 	.tickers-crypto-spots-num {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-sm);
+		font-size: 12px;
 		font-weight: var(--rl-font-medium);
 		font-variant-numeric: tabular-nums;
 		letter-spacing: -0.3px;
@@ -2183,7 +2301,7 @@
 	   --rl-text-md bold draft made PRICE visibly larger and broke the row's vertical rhythm). */
 	.tickers-crypto-spots-price {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-sm);
+		font-size: 12px;
 		font-weight: var(--rl-font-semibold);
 		font-variant-numeric: tabular-nums;
 		letter-spacing: -0.3px;
@@ -2192,7 +2310,7 @@
 	}
 	.tickers-crypto-spots-pct {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-sm);
+		font-size: 12px;
 		font-weight: var(--rl-font-semibold);
 		font-variant-numeric: tabular-nums;
 		color: var(--rl-color-text-faint);
@@ -2212,13 +2330,19 @@
 	   as sagging onto the row's text baseline rather than sitting on its centerline. */
 	.tickers-crypto-spots-x {
 		font-family: var(--rl-font-mono);
-		font-size: var(--rl-text-md);
+		/* Fixed 14px — × glyph stays the same tap-size on mobile and desktop. Matches the rest
+		   of the Markets card's px-fixed typography. */
+		font-size: 14px;
 		line-height: 1;
 		color: var(--rl-color-text-faint);
 		background: transparent;
 		border: none;
 		padding: 4px;
-		margin: -4px;
+		/* Anchor at col 7's right edge (= grid right, since col 7 has 0 width). The negative
+		   right margin pulls the visible glyph 4px past the grid's right edge to absorb the
+		   button's hit-area padding so the × glyph reads as flush right rather than 4px inset. */
+		justify-self: end;
+		margin: -4px -4px -4px 0;
 		cursor: pointer;
 		border-radius: 4px;
 		transform: translateY(-2px);
@@ -2283,6 +2407,164 @@
 	.tickers-card-tab-binance.active {
 		color: #f0b90b;
 		border-bottom-color: #f0b90b;
+	}
+
+	/* ───── VN-Stock tab grid (Markets card 2nd tab) ─────
+	   Parallel to .tickers-crypto-spots-* — 7-col grid with VN_STOCK_FIXED rows at top, VN
+	   watchlist equities below, permanent input row at the bottom. Same dimensions as crypto so the cards
+	   read as siblings (`14px minmax(2.25rem, auto) 1fr 1fr 1fr 1fr 16px`, 10px col gap, 12px row
+	   gap). The structural twin lives a few hundred lines above; merge into a shared base once
+	   the rule-of-three fires (Bullion would be the third). */
+	.tickers-stock-spots-grid {
+		display: grid;
+		/* Col 1 = 10px (matches the dot's diameter exactly, no right-side breathing strip) so the
+		   dot→symbol distance is the column-gap alone (10px) instead of 14px. See the equivalent
+		   block on `.tickers-crypto-spots-grid` for the full rationale; this grid mirrors it
+		   (col 1, col 2 = 4.5rem, numeric ratios, col 7 = 8 + scrollbar-gutter dropped on scroll). */
+		grid-template-columns: 10px 4.5rem 1fr 1fr 1fr 0.9fr 8px;
+		column-gap: 10px;
+		row-gap: 12px;
+		align-items: center;
+	}
+	.tickers-stock-spots-scroll {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		overflow-x: hidden;
+		/* `scrollbar-gutter: stable` dropped — see the equivalent block on
+		   `.tickers-crypto-spots-scroll` for the full rationale (right-edge reclaim for ×). */
+		scrollbar-width: thin;
+		scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+	}
+	.tickers-stock-spots-header {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: subgrid;
+		align-items: center;
+		position: sticky;
+		top: 0;
+		background: var(--rl-color-surface);
+		z-index: 1;
+		transition: background var(--rl-duration-short) var(--rl-ease-move);
+	}
+	.tickers-card:hover .tickers-stock-spots-header,
+	.tickers-card:hover .tickers-stock-spots-input-row {
+		background: #1f1f1f;
+	}
+	.tickers-stock-spots-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: var(--dot, var(--rl-color-text-faint));
+		justify-self: start;
+	}
+	.tickers-stock-spots-asset {
+		font-family: var(--rl-font-mono);
+		/* Fixed 12px — same px-fixed reasoning as the Binance tab. */
+		font-size: 12px;
+		font-weight: var(--rl-font-semibold);
+		letter-spacing: -0.2px;
+		color: var(--rl-color-text);
+		white-space: nowrap;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.tickers-stock-spots-num {
+		font-family: var(--rl-font-mono);
+		font-size: 12px;
+		font-weight: var(--rl-font-medium);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.3px;
+		color: var(--rl-color-text-subtle);
+		text-align: right;
+	}
+	.tickers-stock-spots-price {
+		font-family: var(--rl-font-mono);
+		font-size: 12px;
+		font-weight: var(--rl-font-semibold);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.3px;
+		color: var(--rl-color-text);
+		text-align: right;
+	}
+	/* VN-iBoard 5-state color rule — equity rows only. Ceiling/floor signal the regulatory band
+	   extremes (the most distinctive VN-market UX cue), up/down/flat ride the directional tokens.
+	   The fixed index rows (VNINDEX / VN30 / VNMID) omit `data-color` on their price cells →
+	   falls through to the default text color above, plain bright. */
+	.tickers-stock-spots-price[data-color='ceiling'] {
+		color: var(--rl-color-vn-ceiling);
+	}
+	.tickers-stock-spots-price[data-color='floor'] {
+		color: var(--rl-color-vn-floor);
+	}
+	.tickers-stock-spots-price[data-color='up'] {
+		color: var(--rl-color-up);
+	}
+	.tickers-stock-spots-price[data-color='down'] {
+		color: var(--rl-color-down);
+	}
+	.tickers-stock-spots-price[data-color='flat'] {
+		color: var(--rl-color-vn-flat);
+	}
+	.tickers-stock-spots-pct {
+		font-family: var(--rl-font-mono);
+		font-size: 12px;
+		font-weight: var(--rl-font-semibold);
+		font-variant-numeric: tabular-nums;
+		color: var(--rl-color-text-faint);
+		text-align: right;
+	}
+	.tickers-stock-spots-pct.up {
+		color: var(--rl-color-up);
+	}
+	.tickers-stock-spots-pct.down {
+		color: var(--rl-color-down);
+	}
+	.tickers-stock-spots-x {
+		font-family: var(--rl-font-mono);
+		font-size: 14px;
+		line-height: 1;
+		color: var(--rl-color-text-faint);
+		background: transparent;
+		border: none;
+		padding: 4px;
+		justify-self: end;
+		margin: -4px -4px -4px 0;
+		cursor: pointer;
+		border-radius: 4px;
+		transform: translateY(-2px);
+		transition:
+			color var(--rl-duration-micro, 120ms) var(--rl-ease-move, ease-out),
+			background var(--rl-duration-micro, 120ms) var(--rl-ease-move, ease-out);
+	}
+	.tickers-stock-spots-x:hover {
+		color: var(--rl-color-text);
+		background: var(--rl-color-surface-raised);
+	}
+	.tickers-stock-spots-input-row {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: subgrid;
+		align-items: center;
+		position: sticky;
+		bottom: 0;
+		background: var(--rl-color-surface);
+		z-index: 1;
+		transition: background var(--rl-duration-short) var(--rl-ease-move);
+	}
+	.tickers-stock-spots-input-icon {
+		justify-self: start;
+		font-family: var(--rl-font-mono);
+		font-size: var(--rl-text-md);
+		font-weight: var(--rl-font-bold);
+		line-height: 1;
+		color: var(--rl-color-text-faint);
+	}
+	.tickers-stock-spots-input-wrapper {
+		grid-column: 2 / -1;
+		display: flex;
+		align-items: center;
 	}
 
 	@keyframes spin {
