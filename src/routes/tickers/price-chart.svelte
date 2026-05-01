@@ -54,7 +54,7 @@
 			candles.push({
 				time,
 				open: sells[0],
-				close: sells[sells.length - 1],
+				close: sells.at(-1)!,
 				high: Math.max(...sells),
 				low: Math.min(...sells),
 			})
@@ -75,7 +75,7 @@
 			merged.push({
 				time,
 				open: group[0].open,
-				close: group[group.length - 1].close,
+				close: group.at(-1)!.close,
 				high: Math.max(...group.map((c) => c.high)),
 				low: Math.min(...group.map((c) => c.low)),
 			})
@@ -87,7 +87,7 @@
 		if (!candles.length) return null
 		return {
 			open: candles[0].open,
-			close: candles[candles.length - 1].close,
+			close: candles.at(-1)!.close,
 			high: Math.max(...candles.map((c) => c.high)),
 			low: Math.min(...candles.map((c) => c.low)),
 		}
@@ -97,10 +97,15 @@
 		data.candles?.length ? mergeCandles(data.candles, candleSize) : buildCandles(data.points, candleSize),
 	)
 	let summary = $derived(periodStats(allCandles))
-	let display = $derived(hoverCandle ?? (allCandles.length ? allCandles[allCandles.length - 1] : null))
+	let display = $derived(hoverCandle ?? allCandles.at(-1) ?? null)
 	let isUp = $derived(display ? display.close >= display.open : true)
 
 	const defaultFmt = (v: number) => new Intl.NumberFormat('vi-VN').format(v)
+	// vi-VN locale on the percent formatter so the period-change %, OHLC %, and any
+	// other percent surface in the chart match the rest of the app's comma-decimal /
+	// dot-thousands convention. Replaces inline `.toFixed(2)` calls which would render
+	// "2.75%" regardless of locale.
+	const pctFmt2 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 	const defaultFmtM = (v: number) => {
 		if (v >= 1_000_000 || v <= -1_000_000) {
 			const m = v / 1_000_000
@@ -383,7 +388,7 @@
 	{@const periodUp = periodAbs >= 0}
 	<div class="period-change" class:up={periodUp} class:down={!periodUp}>
 		<span class="period-change-value">{periodUp ? '+' : ''}{fmt(periodAbs)}</span>
-		<span class="period-change-pct">{periodUp ? '+' : ''}{periodPct.toFixed(2)}%</span>
+		<span class="period-change-pct">{periodUp ? '+' : ''}{pctFmt2.format(periodPct)}%</span>
 	</div>
 {/if}
 
@@ -408,7 +413,7 @@
 				>{fmtM(display.close)}</span
 			></span>
 		<span class="ohlc-change" class:up={change >= 0} class:down={change < 0}>
-			{change >= 0 ? '+' : ''}{fmtM(change)} ({changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%)
+			{change >= 0 ? '+' : ''}{fmtM(change)} ({changePct >= 0 ? '+' : ''}{pctFmt2.format(changePct)}%)
 		</span>
 	{/if}
 </div>

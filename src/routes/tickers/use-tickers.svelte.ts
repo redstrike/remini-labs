@@ -8,9 +8,9 @@ import {
 	type CryptoTicker,
 	type CryptoSymbol,
 } from './shared/binance-client'
-import { formatTiered } from './shared/number-format'
+import { formatTiered, pctChange } from './shared/number-format'
 import type { PriceTable, ChartData } from './shared/phuquy-client'
-import type { IndexQuote, StockQuote } from './shared/ssi-iboard-client'
+import { isVnIndex, type IndexQuote, type StockQuote } from './shared/ssi-iboard-client'
 import { fetchVcbSnapshot, toVcbDateParam, vcbYesterday, type VcbSnapshot } from './shared/vcb-forex-client'
 import { createWatchlist } from './use-watchlist.svelte'
 import { STOCKS_POLL_MS, computeNextPollTime, msUntilNextPoll } from './vn-stock-schedule'
@@ -43,8 +43,17 @@ const FOREX_POLL_MS = 60 * 60 * 1000 // 60 min — VCB publishes a daily snapsho
 // STOCKS_POLL_MS — imported from vn-stock-schedule. Phase-aware schedule:
 // 5 min during trading; drains until next 09:00 ICT / 21:00 EOD otherwise.
 
-// Single VN stock symbol the app tracks — becomes state when watchlist lands.
-const STOCK_SYMBOL = 'VN100'
+// Fixed VN tickers — always present at the top of the VN-Stock card, ahead of the watchlist.
+// Mirror of the crypto BTC/ETH/SOL fixed-rows pattern. Mix of indices (VNINDEX, VN30, VNMID)
+// and equities (VCB): the data layer routes per-symbol via `isVnIndex(symbol)` so the same Map
+// holds both shapes (`IndexQuote | StockQuote`). VNINDEX is the headline used as the freshness
+// anchor (X-Cached-At from SSR pins `lastStocksFetchedAt`).
+export const VN_STOCK_FIXED = ['VNINDEX', 'VN30', 'VNMID', 'VCB'] as const
+export type VnStockFixedSymbol = (typeof VN_STOCK_FIXED)[number]
+const VN_STOCK_FIXED_SET: ReadonlySet<string> = new Set(VN_STOCK_FIXED)
+// Headline freshness anchor — the symbol whose X-Cached-At pins the VN-stocks freshness dot.
+// Broadest market index → most representative "VN market state right now" signal.
+const VN_STOCK_HEADLINE: VnStockFixedSymbol = 'VNINDEX'
 
 // Freshness thresholds — dot turns amber/red when exceeded
 const METALS_STALE_MS = METALS_POLL_MS // fresh within one poll cycle
@@ -73,8 +82,11 @@ interface TickersData {
 	metalsCachedAt: number // epoch ms from SSR's X-Cached-At; 0 when SSR errored — falls back to Date.now()
 	crypto: CryptoTicker[] | null
 	cryptoCachedAt: number
-	vn100: IndexQuote | null
-	vn100CachedAt: number
+	// One entry per VN_STOCK_FIXED symbol (currently VNINDEX, VN30, VNMID, VCB). `quote` is
+	// `null` when SSR failed for that symbol — client-side `fetchStocks()` retries on mount.
+	// `cachedAt = 0` signals SSR-errored too. The freshness dot anchors to VN_STOCK_HEADLINE's
+	// `cachedAt` (per-row staleness isn't surfaced in the UI).
+	vnStockFixed: { symbol: string; quote: IndexQuote | StockQuote | null; cachedAt: number }[]
 	// Streamed from +page.ts. Pending promise on first paint, resolves to {data, cachedAt}
 	// once the server's chart fetch settles (or {null, 0} on failure → falls back to client fetch).
 	// `cachedAt` carries the server's upstream fetch time so the chart's freshness dot anchors
@@ -87,9 +99,18 @@ interface TickersData {
 // immediate refetch on mount to try again from the client's IP.
 const SSR_FRESHNESS_MS = 60 * 1000
 
+// Crypto symbols rendered as fixed rows on the Binance tab — Binance's full pair symbols, not
+// the human-friendly "BTC" labels (the watchlist stores raw upstream symbols). Sourced once and
+// passed to `createWatchlist({ reservedCrypto })` so the picker rejects them and the persisted
+// watchlist auto-prunes any historical entries that overlap.
+const CRYPTO_FIXED_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'] as const
+
 export function useTickers(initialData: TickersData) {
 	const bus = createEventBus<TickersEvents>()
-	const watchlist = createWatchlist()
+	const watchlist = createWatchlist({
+		reservedCrypto: CRYPTO_FIXED_SYMBOLS,
+		reservedStocks: VN_STOCK_FIXED,
+	})
 	let priceTable = $state<PriceTable | null>(initialData.metals)
 	let loading = $state(!initialData.metals)
 	let error = $state<string | null>(null)
@@ -136,7 +157,7 @@ export function useTickers(initialData: TickersData) {
 		return () => clearInterval(interval)
 	})
 
-	// Poll VN100 on the VN market schedule — client only. Self-rescheduling setTimeout
+	// Poll VN stocks on the VN market schedule — client only. Self-rescheduling setTimeout
 	// fires at each meaningful transition (5-min tick during trading, 21:00 EOD weekdays,
 	// Mon 09:00 on weekends). Zero wasted wakes during closed windows.
 	// `cancelled` flag closes the cleanup-during-await race: if the component unmounts
@@ -144,9 +165,11 @@ export function useTickers(initialData: TickersData) {
 	// reassign `timer` to a fresh setTimeout that cleanup never sees.
 	$effect(() => {
 		if (!browser) return
-		// Immediate fetch on mount so watchlist stock quotes populate without waiting for
-		// the VN market schedule (which might be hours away during off-hours).
-		if (watchlist.stocks.length > 0) fetchStocks()
+		// Immediate fetch on mount so VN_STOCK_FIXED rows and watchlist symbols populate without
+		// waiting for the VN market schedule (which might be hours away during off-hours). SSR
+		// pre-hydrates VN_STOCK_FIXED, but per-symbol SSR errors (or watchlist additions across
+		// reloads) would otherwise stay skeleton until the next scheduled poll.
+		fetchStocks()
 		let cancelled = false
 		let timer: ReturnType<typeof setTimeout> | null = null
 		function scheduleNext() {
@@ -335,46 +358,82 @@ export function useTickers(initialData: TickersData) {
 		}
 	}
 
-	// VN100 spot quote + watchlist stock quotes
-	let vn100Quote = $state<IndexQuote | null>(initialData.vn100 ?? null)
-	let stockQuotes = $state<Map<string, StockQuote>>(new Map())
-	let lastStocksFetchedAt = $state(initialData.vn100CachedAt || Date.now())
+	// All VN spot quotes — fixed rows (VN_STOCK_FIXED) and watchlist — share one Map. The value is a
+	// discriminated union: `StockQuote` for equities (FPT, MWG, VCB …) routed via `/api/stocks/quote`,
+	// `IndexQuote` for VN-market indices (VN100, VN30, VNDIAMOND …) routed via `/api/spots/stocks`.
+	// Both endpoints share the same SSI iBoard backend but hit different upstream paths —
+	// `isVnIndex(symbol)` decides. Without this split, indices end up at the stock endpoint (which
+	// calls `/stock/{SYMBOL}` on SSI), get an empty `live.items` response, and silently collapse
+	// to a misleading "0% at refPrice" payload (per the existing TODO at ssi-iboard-client.ts).
+	const initialStockQuotes = new Map<string, StockQuote | IndexQuote>()
+	let headlineCachedAt = 0
+	for (const entry of initialData.vnStockFixed) {
+		if (entry.quote) initialStockQuotes.set(entry.symbol, entry.quote)
+		if (entry.symbol === VN_STOCK_HEADLINE && entry.cachedAt) headlineCachedAt = entry.cachedAt
+	}
+	let stockQuotes = $state<Map<string, StockQuote | IndexQuote>>(initialStockQuotes)
+	let lastStocksFetchedAt = $state(headlineCachedAt || Date.now())
 
-	function getStockQuote(symbol: string): StockQuote | null {
+	function getStockQuote(symbol: string): StockQuote | IndexQuote | null {
 		return stockQuotes.get(symbol) ?? null
+	}
+
+	/** Fetch a single VN watchlist quote and merge it into `stockQuotes` without disturbing the rest.
+	 * Mirror of `fetchOneCrypto` — used when the user adds a new watchlist symbol. Routes by symbol
+	 * kind: indices hit `/api/spots/stocks` (returns IndexQuote), equities hit `/api/stocks/quote`
+	 * (returns StockQuote). Both are cached server-side, so the stale-on-error grace window +
+	 * X-Cached-At freshness anchor are both honored. */
+	async function fetchOneStock(symbol: string): Promise<void> {
+		try {
+			const endpoint = isVnIndex(symbol)
+				? `/tickers/api/spots/stocks?symbol=${symbol}`
+				: `/tickers/api/stocks/quote?symbol=${symbol}`
+			const res = await fetch(endpoint)
+			if (!res.ok) return
+			const quote = (await res.json()) as StockQuote | IndexQuote
+			const next = new Map(stockQuotes)
+			next.set(symbol, quote)
+			stockQuotes = next
+		} catch (e) {
+			console.error(`fetchOneStock(${symbol}) failed:`, e)
+		}
 	}
 
 	async function fetchStocks() {
 		bus.emit('stocks:fetching', undefined as void)
 		try {
-			const res = await fetch(`/tickers/api/spots/stocks?symbol=${STOCK_SYMBOL}`)
-			if (res.ok) {
-				vn100Quote = await res.json()
-				// Anchor the dot to VN100's server cache time — the headline value the dot
-				// most prominently represents. Watchlist quotes update silently; their per-row
-				// freshness isn't surfaced. If VN100 fetch failed, lastStocksFetchedAt stays
-				// at its previous honest value.
-				lastStocksFetchedAt = Number(res.headers.get('X-Cached-At')) || Date.now()
-			}
+			// Single batched round-trip: fixed rows (VN_STOCK_FIXED) + watchlist, deduped. Per-symbol
+			// endpoint routing (`isVnIndex`) keeps indices off the stock endpoint and equities
+			// off the index endpoint — required because both share the same SSI backend at
+			// different paths. Anchor `lastStocksFetchedAt` to VN_STOCK_HEADLINE's X-Cached-At
+			// only — that's the headline freshness signal; per-row staleness isn't surfaced.
+			const allSymbols = [...new Set<string>([...VN_STOCK_FIXED, ...watchlist.stocks])]
+			const results = await Promise.allSettled(
+				allSymbols.map(async (symbol) => {
+					const endpoint = isVnIndex(symbol)
+						? `/tickers/api/spots/stocks?symbol=${symbol}`
+						: `/tickers/api/stocks/quote?symbol=${symbol}`
+					const res = await fetch(endpoint)
+					if (!res.ok) return null
+					const quote = (await res.json()) as StockQuote | IndexQuote
+					const cachedAt =
+						symbol === VN_STOCK_HEADLINE ? Number(res.headers.get('X-Cached-At')) || Date.now() : 0
+					return { symbol, quote, cachedAt }
+				}),
+			)
 
-			// Watchlist stocks — parallel via the cached server route
-			if (watchlist.stocks.length > 0) {
-				const results = await Promise.allSettled(
-					watchlist.stocks.map((s) =>
-						fetch(`/tickers/api/stocks/quote?symbol=${s}`).then((r) => (r.ok ? r.json() : null)),
-					),
-				)
-				const newMap = new Map<string, StockQuote>()
-				results.forEach((result, i) => {
-					if (result.status === 'fulfilled' && result.value) {
-						newMap.set(watchlist.stocks[i], result.value)
-					}
-				})
-				stockQuotes = newMap
+			const newMap = new Map<string, StockQuote | IndexQuote>()
+			let headlineCachedAt = 0
+			for (const r of results) {
+				if (r.status !== 'fulfilled' || !r.value) continue
+				newMap.set(r.value.symbol, r.value.quote)
+				if (r.value.symbol === VN_STOCK_HEADLINE && r.value.cachedAt) headlineCachedAt = r.value.cachedAt
 			}
+			stockQuotes = newMap
+			if (headlineCachedAt) lastStocksFetchedAt = headlineCachedAt
 
 			bus.emit('stocks:fetched', { ok: true })
-			if (chartAsset === 'VN100' || watchlist.stocks.includes(chartAsset)) autoRefreshChart()
+			if (VN_STOCK_FIXED_SET.has(chartAsset) || watchlist.stocks.includes(chartAsset)) autoRefreshChart()
 		} catch (e) {
 			console.error('Stocks fetch error:', e)
 			bus.emit('stocks:fetched', { ok: false, error: (e as Error).message })
@@ -442,24 +501,16 @@ export function useTickers(initialData: TickersData) {
 		if (data.candles?.length) {
 			const cutoffStr = cutoff.toISOString().split('T')[0]
 			const filtered = data.candles.filter((c) => c.time >= cutoffStr)
-			let changeRate = data.changeRate
-			if (filtered.length >= 2) {
-				const first = filtered[0].open
-				const last = filtered[filtered.length - 1].close
-				changeRate = first ? ((last - first) / first) * 100 : 0
-			}
+			const changeRate =
+				filtered.length >= 2 ? pctChange(filtered[0].open, filtered.at(-1)!.close) : data.changeRate
 			return { changeRate, points: [], candles: filtered }
 		}
 
 		// Points-based path (metals)
 		const cutoffStr = cutoff.toISOString()
 		const filtered = data.points.filter((p) => p.timestamp >= cutoffStr)
-		let changeRate = data.changeRate
-		if (filtered.length >= 2) {
-			const first = filtered[0].sellPrice
-			const last = filtered[filtered.length - 1].sellPrice
-			changeRate = first ? ((last - first) / first) * 100 : 0
-		}
+		const changeRate =
+			filtered.length >= 2 ? pctChange(filtered[0].sellPrice, filtered.at(-1)!.sellPrice) : data.changeRate
 		return { changeRate, points: filtered }
 	}
 
@@ -484,7 +535,7 @@ export function useTickers(initialData: TickersData) {
 	const chartCache = new Map<string, CacheEntry>()
 
 	function chartCacheTtl(asset: ChartAsset, fetchedAt: number = Date.now()): number {
-		if (asset === 'VN100' || watchlist.stocks.includes(asset)) {
+		if (VN_STOCK_FIXED_SET.has(asset) || watchlist.stocks.includes(asset)) {
 			return computeNextPollTime(new Date(fetchedAt)).getTime() - fetchedAt
 		}
 		if (asset in CRYPTO_SYMBOLS || watchlist.crypto.includes(asset)) return CRYPTO_STALE_MS
@@ -556,7 +607,7 @@ export function useTickers(initialData: TickersData) {
 			chartLoading = true
 		}, LOADING_DELAY_MS)
 		chartError = null
-		const isStockChart = asset === 'VN100' || watchlist.stocks.includes(asset)
+		const isStockChart = VN_STOCK_FIXED_SET.has(asset) || watchlist.stocks.includes(asset)
 		const isCryptoChart = asset in CRYPTO_SYMBOLS || watchlist.crypto.includes(asset)
 		const chartSource = isStockChart ? 'stocks' : isCryptoChart ? 'crypto' : 'metals'
 		bus.emit(`chart:${chartSource}:fetching` as const, undefined as void)
@@ -651,15 +702,13 @@ export function useTickers(initialData: TickersData) {
 		getCryptoTicker,
 		getCryptoTickerBySymbol,
 		fetchOneCrypto,
-		get vn100Quote() {
-			return vn100Quote
-		},
 		getStockQuote,
+		fetchOneStock,
 		get isCryptoAsset() {
 			return chartAsset in CRYPTO_SYMBOLS || watchlist.crypto.includes(chartAsset)
 		},
 		get isStockAsset() {
-			return chartAsset === 'VN100' || watchlist.stocks.includes(chartAsset)
+			return VN_STOCK_FIXED_SET.has(chartAsset) || watchlist.stocks.includes(chartAsset)
 		},
 		get metalsElapsed() {
 			return metalsElapsed
@@ -742,7 +791,7 @@ export function formatKVND(value: number): string {
 	return vndFmt.format(Math.round(value / 1000))
 }
 
-const pctSignedFmt = new Intl.NumberFormat('en-US', {
+const pctSignedFmt = new Intl.NumberFormat('vi-VN', {
 	minimumFractionDigits: 2,
 	maximumFractionDigits: 2,
 	signDisplay: 'always',
@@ -785,16 +834,20 @@ export const USDT_FORMATTER = {
 	formatAxis: formatUSDTAxis,
 }
 
-const vn100Fmt = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-export function formatVN100(value: number): string {
-	return vn100Fmt.format(value)
+// Index values (VNINDEX, VN30, VN100, VNMID, VNDIAMOND, HNXINDEX, …) flow through the same
+// tiered ladder as every other numeric surface in the app — 0dp ≥ 1000, 1dp at 100–999, 2dp
+// at 1–99, etc. Locked-2dp was a hold-over from the original VN100-only headline; once the
+// indices became a family (multi-fixed rows + VN watchlist), the inconsistent precision
+// across magnitudes (1936.31 vs 250.66 vs 0.85) read as arbitrary. Tiered conformance keeps
+// every index's displayed digit-count proportional to its magnitude.
+export function formatVnIndex(value: number): string {
+	return formatTiered(value)
 }
 
 export const STOCK_FORMATTER = {
-	format: formatVN100,
-	formatCompact: formatVN100,
-	formatAxis: formatVN100,
+	format: formatVnIndex,
+	formatCompact: formatVnIndex,
+	formatAxis: formatVnIndex,
 }
 
 // Adaptive precision for any crypto pair. Stablecoin quotes (USDT/USDC/…) route through
