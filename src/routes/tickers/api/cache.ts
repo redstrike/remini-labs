@@ -23,8 +23,15 @@ export interface CacheProbe {
 	cache: Cache | null
 }
 
+// Open the shared `tickers` Workers Cache, or null when the runtime has no Cache API (Vite dev
+// SSR doesn't expose `caches`). Use for direct cache access outside the `probeCache` debounce
+// path — e.g. dictionary endpoints with their own SWR pattern.
+export async function openTickersCache(): Promise<Cache | null> {
+	return (await globalThis.caches?.open(CACHE_NAME)) ?? null
+}
+
 export async function probeCache(key: string, ttlMs: number): Promise<CacheProbe> {
-	const cache = (await globalThis.caches?.open(CACHE_NAME)) ?? null
+	const cache = await openTickersCache()
 	if (!cache) return { debounced: null, cached: null, cache: null }
 
 	const raw = await cache.match(key)
@@ -38,7 +45,7 @@ export async function probeCache(key: string, ttlMs: number): Promise<CacheProbe
 		headers: new Headers(raw.headers),
 	})
 
-	const cachedAt = Number(cached.headers.get(TIMESTAMP_HEADER) || 0)
+	const cachedAt = Number(cached.headers.get(TIMESTAMP_HEADER) ?? 0)
 	const debounced = Date.now() - cachedAt < ttlMs ? cached : null
 	return { debounced, cached, cache }
 }

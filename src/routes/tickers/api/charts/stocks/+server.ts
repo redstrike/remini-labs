@@ -1,7 +1,7 @@
-import { logServerError } from '$lib/server-log'
+import { serverError502 } from '$lib/server-log'
 import { json } from '@sveltejs/kit'
 
-import { DEFAULT_INDEX_SYMBOL, VN_SYMBOL_RE, fetchChart } from '../../../shared/ssi-iboard-client'
+import { DEFAULT_INDEX_SYMBOL, fetchChart, parseVnSymbolParam } from '../../../shared/ssi-iboard-client'
 import { freshMsForCache } from '../../../vn-stock-schedule'
 import { probeCache } from '../../cache'
 import type { RequestHandler } from './$types'
@@ -9,11 +9,9 @@ import type { RequestHandler } from './$types'
 const MIN_FRESH_MS = 10 * 1000 // debounce floor — dedup rapid-fire requests
 
 export const GET: RequestHandler = async ({ url }) => {
-	const raw = url.searchParams.get('symbol') ?? DEFAULT_INDEX_SYMBOL
-	const symbol = raw.toUpperCase()
-	if (!VN_SYMBOL_RE.test(symbol)) {
-		return json({ error: `Invalid symbol: ${raw}` }, { status: 400 })
-	}
+	const parsed = parseVnSymbolParam(url, { defaultSymbol: DEFAULT_INDEX_SYMBOL })
+	if ('errorResponse' in parsed) return parsed.errorResponse
+	const { symbol } = parsed
 
 	const cacheKey = `https://remini-labs.internal/tickers/api/charts/stocks?symbol=${symbol}`
 	const freshMs = freshMsForCache(MIN_FRESH_MS)
@@ -36,7 +34,6 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		return response
 	} catch (e) {
-		logServerError('ssi-iboard-charts-history-error', e, { symbol })
-		return json({ error: `Unable to fetch ${symbol} chart data` }, { status: 502 })
+		return serverError502('ssi-iboard-charts-history-error', e, `Unable to fetch ${symbol} chart data`, { symbol })
 	}
 }

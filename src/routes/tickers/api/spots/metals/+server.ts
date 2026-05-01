@@ -1,4 +1,4 @@
-import { logServerError } from '$lib/server-log'
+import { logServerError, serverError502 } from '$lib/server-log'
 import { json } from '@sveltejs/kit'
 
 import { computeDayStats, fetchChartData, fetchPriceTable } from '../../../shared/phuquy-client'
@@ -43,7 +43,7 @@ async function getUsdAvgRate(cache: Cache | null): Promise<number | null> {
 	try {
 		const snapshot = await fetchVcbSnapshot(new Date())
 		const usd = snapshot.rates.get('USD')
-		if (!usd) throw new Error('USD not in VCB snapshot')
+		if (!usd) throw new Error('USD not in VCB snapshot', { cause: snapshot })
 		const entry: UsdCacheEntry = { rate: usd.avg, cachedAt: Date.now() }
 		if (cache) {
 			const response = new Response(JSON.stringify(entry), {
@@ -100,7 +100,6 @@ export const GET: RequestHandler = async () => {
 
 		return response
 	} catch (e) {
-		logServerError('phuquy-table-error', e)
-		return json({ error: 'Unable to fetch prices' }, { status: 502 })
+		return serverError502('phuquy-table-error', e, 'Unable to fetch prices')
 	}
 }

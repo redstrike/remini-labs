@@ -1,4 +1,4 @@
-import { logServerError } from '$lib/server-log'
+import { serverError502 } from '$lib/server-log'
 import { json } from '@sveltejs/kit'
 
 import { fetchChartData } from '../../../shared/phuquy-client'
@@ -16,7 +16,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		return json({ error: 'categoryId, type, and duration query params are required' }, { status: 400 })
 	}
 
-	const unit = (url.searchParams.get('unit') as 'chi' | 'kg') || 'chi'
+	const unit = url.searchParams.get('unit') === 'kg' ? 'kg' : 'chi'
 	const cacheKey = `https://remini-labs.internal/tickers/api/charts/metals?categoryId=${categoryId}&type=${type}&duration=${duration}&unit=${unit}`
 
 	const { debounced, cache } = await probeCache(cacheKey, DEBOUNCE_TTL_MS)
@@ -33,7 +33,11 @@ export const GET: RequestHandler = async ({ url }) => {
 		if (cache) await cache.put(cacheKey, response.clone())
 		return response
 	} catch (e) {
-		logServerError('phuquy-chart-error', e, { categoryId, type, duration, unit })
-		return json({ error: 'Unable to fetch chart data' }, { status: 502 })
+		return serverError502('phuquy-chart-error', e, 'Unable to fetch chart data', {
+			categoryId,
+			type,
+			duration,
+			unit,
+		})
 	}
 }

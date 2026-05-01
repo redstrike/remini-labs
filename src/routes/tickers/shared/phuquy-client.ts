@@ -1,13 +1,8 @@
+import { createFetchWithTimeout } from './fetch-with-timeout'
 import { toICTDate } from './ict-date'
+import { pctChange } from './number-format'
 
 const BASE_URL = 'https://be.phuquy.com.vn/jewelry/product-payment-service/api'
-
-const HEADERS = {
-	'User-Agent': 'ReminiLabs/1.0',
-	Accept: 'application/json',
-}
-
-const FETCH_TIMEOUT_MS = 5000
 
 // --- Types ---
 
@@ -143,15 +138,13 @@ interface PhuQuyChartEntry {
 
 // --- Fetch helpers ---
 
-// Use global fetch for external API calls. SvelteKit's event.fetch adds Origin headers
-// that can trigger CORS 403 rejections from third-party APIs.
-function withTimeout(url: string, init?: RequestInit): Promise<Response> {
-	return globalThis.fetch(url, {
-		...init,
-		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-		headers: { ...HEADERS, ...init?.headers },
-	})
-}
+const withTimeout = createFetchWithTimeout({
+	timeoutMs: 5_000,
+	headers: {
+		'User-Agent': 'ReminiLabs/1.0',
+		Accept: 'application/json',
+	},
+})
 
 function normalizeUnit(type: number, unitOfMeasure: string | null): string {
 	if (!unitOfMeasure) return type === 1 ? 'VND/chi' : 'VND/luong'
@@ -301,9 +294,8 @@ export function computeDayStats(chart: ChartData | null, nowDate: Date = new Dat
 	}
 	if (!reference) return null
 
-	const current = todayPoints.length > 0 ? todayPoints[todayPoints.length - 1] : reference
-	const changePercent =
-		reference.sellPrice !== 0 ? ((current.sellPrice - reference.sellPrice) / reference.sellPrice) * 100 : 0
+	const current = todayPoints.at(-1) ?? reference
+	const changePercent = pctChange(reference.sellPrice, current.sellPrice)
 
 	// L/H over today's points; if today has no points yet (pre-open), pin to current (= reference).
 	const sample = todayPoints.length > 0 ? todayPoints : [current]

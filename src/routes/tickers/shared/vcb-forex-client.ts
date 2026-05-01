@@ -5,6 +5,7 @@
 // Weekend/holiday days auto-roll to the last business-day close (VCB-side), so no
 // client walk-back logic is needed.
 
+import { createFetchWithTimeout } from './fetch-with-timeout'
 import { toICTDate } from './ict-date'
 import { formatTiered } from './number-format'
 
@@ -140,16 +141,16 @@ export function vcbYesterday(today: Date = new Date()): Date {
 	return new Date(today.getTime() - 24 * 60 * 60 * 1000)
 }
 
-type FetchFn = typeof fetch
+// VCB's TLS handshake is slower than the other upstreams (8s vs 5s default) — calibrated
+// from observed p99 in probe-upstreams runs. Don't lower without re-measuring.
+const withTimeout = createFetchWithTimeout({
+	timeoutMs: 8_000,
+	headers: { 'User-Agent': 'Mozilla/5.0' },
+})
 
-const FETCH_TIMEOUT_MS = 8_000
-
-export async function fetchVcbSnapshot(date: Date, fetchImpl: FetchFn = fetch): Promise<VcbSnapshot> {
+export async function fetchVcbSnapshot(date: Date): Promise<VcbSnapshot> {
 	const dateStr = toVcbDateParam(date)
-	const res = await fetchImpl(`${VCB_ENDPOINT}?date=${dateStr}`, {
-		headers: { 'User-Agent': 'Mozilla/5.0' },
-		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-	})
+	const res = await withTimeout(`${VCB_ENDPOINT}?date=${dateStr}`)
 	if (!res.ok) throw new Error(`VCB returned ${res.status}`)
 	const raw = (await res.json()) as VcbRawResponse
 
@@ -190,7 +191,7 @@ export function formatForexPrice(value: number): string {
 	return formatTiered(value, 'vi-VN')
 }
 
-const pctFmt = new Intl.NumberFormat('en-US', {
+const pctFmt = new Intl.NumberFormat('vi-VN', {
 	minimumFractionDigits: 2,
 	maximumFractionDigits: 2,
 	signDisplay: 'always',

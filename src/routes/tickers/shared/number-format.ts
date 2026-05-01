@@ -1,7 +1,9 @@
 // Single source of truth for numeric display precision — covers fiat, crypto, forex rates,
 // and anything else that follows the "precision scales inversely with magnitude" convention.
-// Callers pick locale ('en-US' comma-thousands · 'vi-VN' dot-thousands) and prepend any
-// currency symbol or suffix they need.
+// Default locale is `vi-VN` (dot-thousands · comma-decimal) so every numeric surface in the
+// app reads with one separator convention; callers may override with `en-US` (comma-thousands
+// · dot-decimal) when integrating with English-language datasets that pre-format their own
+// strings, but the in-app default is unified.
 //
 //    >= 1000           → 0 decimal places
 //    100 – 999         → 1 decimal place
@@ -35,6 +37,14 @@ function formatterFor(decimals: number, locale: string): Intl.NumberFormat {
 	return fmt
 }
 
-export function formatTiered(value: number, locale: string = 'en-US'): string {
+export function formatTiered(value: number, locale: string = 'vi-VN'): string {
 	return formatterFor(precisionFor(value), locale).format(value)
+}
+
+// Percent change from `from` → `to`, guarded against zero / NaN reference. Returns 0 when
+// `from` is zero or non-finite — the convention used across crypto, VN-stock, and bullion
+// clients to mean "no usable reference, no change". Negative reference passes through (callers
+// don't pass negatives in this codebase, but the math is well-defined either way).
+export function pctChange(from: number, to: number): number {
+	return from ? ((to - from) / from) * 100 : 0
 }

@@ -1,23 +1,90 @@
+import { json } from '@sveltejs/kit'
+
+import { createFetchWithTimeout } from './fetch-with-timeout'
+import { toUTCDate } from './ict-date'
+import { pctChange } from './number-format'
 import type { OHLCCandle } from './phuquy-client'
 
 const IBOARD_API = 'https://iboard-api.ssi.com.vn'
 const IBOARD_QUERY = 'https://iboard-query.ssi.com.vn'
 
-// iBoard is Cloudflare-fronted; a browser-shaped UA avoids occasional 403s.
-// Origin header matches real iBoard frontend traffic.
-const HEADERS = {
-	'User-Agent': 'Mozilla/5.0 (compatible; ReminiLabs/1.0)',
-	Origin: 'https://iboard.ssi.com.vn',
-	Accept: '*/*',
-}
-
-const FETCH_TIMEOUT_MS = 5000
-
 /** Pinned default — VN100 is today's opinionated "VN market glance" index. */
 export const DEFAULT_INDEX_SYMBOL = 'VN100'
 
-/** SSI symbol shape — uppercase alphanumeric (e.g. VN100, VNINDEX, FPT). */
-export const VN_SYMBOL_RE = /^[A-Z0-9]+$/
+/** SSI symbol shape — uppercase alphanumeric, 1-16 chars (longest real VN ticker is 9 chars,
+ * `FUEVFVND`; the cap blocks attacker-controlled payloads from bloating Workers Cache keys
+ * via `?symbol=AAAA…`). */
+export const VN_SYMBOL_RE = /^[A-Z0-9]{1,16}$/
+
+/** Result shape of `parseVnSymbolParam` — discriminated union so TS narrows after the check. */
+export type VnSymbolParseResult = { symbol: string } | { errorResponse: Response }
+
+/** Parse + validate the `?symbol=...` query param against the VN symbol shape. Pass
+ * `defaultSymbol` to make the param optional (the natural default for spots/charts endpoints).
+ * On hit returns the upper-cased symbol; on miss returns a 400 Response with `{ error }` —
+ * the caller short-circuits with `if ('errorResponse' in r) return r.errorResponse`. */
+export function parseVnSymbolParam(url: URL, opts: { defaultSymbol?: string } = {}): VnSymbolParseResult {
+	const raw = url.searchParams.get('symbol')
+	const candidate = raw ?? opts.defaultSymbol
+	if (!candidate) {
+		return { errorResponse: json({ error: 'symbol query param required' }, { status: 400 }) }
+	}
+	const symbol = candidate.toUpperCase()
+	if (!VN_SYMBOL_RE.test(symbol)) {
+		return {
+			errorResponse: json({ error: 'Invalid symbol — uppercase alphanumeric, 1-16 chars' }, { status: 400 }),
+		}
+	}
+	return { symbol }
+}
+
+/** Well-known VN-market indices. SSI's `/exchange-index/{ID}` endpoint serves these; every other
+ * symbol (FPT, VCB, MWG, …) is a regular equity served by `/stock/{SYMBOL}` + `/le-table/...`.
+ * The watchlist stores symbols as plain strings (no kind metadata), so we re-derive kind from
+ * this set on every fetch — both the smart-fetch and periodic refresh code paths gate on it.
+ * The picker's `kind: 'index'` field is the same source of truth (SSI dictionary), but doesn't
+ * survive a page reload through localStorage; the hardcoded set is the durable floor.
+ *
+ * Coverage: HOSE main + size + diamond + sector indices, the full HNX family, UPCOM. Add new
+ * HOSE/HNX/UPCOM indices here as they're listed (quarterly index reviews are the main churn). */
+export const KNOWN_VN_INDICES = new Set([
+	// HOSE main + size + theme + composites — names match SSI's `/stock-info` dictionary verbatim
+	// (verified live: SSI uses `VNALL` not `VNALLSHARE`, `HNXUPCOMINDEX` not `UPCOMINDEX`).
+	'VNINDEX',
+	'VN30',
+	'VN100',
+	'VNALL',
+	'VNXALL',
+	'VNMID',
+	'VNSML',
+	'VNDIAMOND',
+	'VNFINLEAD',
+	'VNFINSELECT',
+	'VNX50',
+	'VNSI',
+	'VNCOND',
+	// HOSE sectors
+	'VNCONS',
+	'VNFIN',
+	'VNHEAL',
+	'VNIND',
+	'VNIT',
+	'VNMAT',
+	'VNREAL',
+	'VNUTI',
+	'VNENE',
+	// HNX family + UPCoM (SSI groups UPCOM under the HNX prefix as `HNXUPCOMINDEX`)
+	'HNXINDEX',
+	'HNX30',
+	'HNXUPCOMINDEX',
+])
+
+/** True when the symbol matches a known VN exchange-index (fetched via `/exchange-index/{ID}`).
+ * False for everything else — equities, warrants, ETFs, futures (those route through stock/futures
+ * endpoints). Comparison is case-insensitive against `KNOWN_VN_INDICES`. */
+export function isVnIndex(symbol: string): boolean {
+	return KNOWN_VN_INDICES.has(symbol.toUpperCase())
+}
 
 // --- Types ---
 
@@ -158,13 +225,16 @@ interface UdfBars {
 
 // --- Fetch helper ---
 
-function withTimeout(url: string, init?: RequestInit): Promise<Response> {
-	return globalThis.fetch(url, {
-		...init,
-		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-		headers: { ...HEADERS, ...init?.headers },
-	})
-}
+// iBoard is Cloudflare-fronted; a browser-shaped UA avoids occasional 403s.
+// Origin header matches real iBoard frontend traffic.
+const withTimeout = createFetchWithTimeout({
+	timeoutMs: 5_000,
+	headers: {
+		'User-Agent': 'Mozilla/5.0 (compatible; ReminiLabs/1.0)',
+		Origin: 'https://iboard.ssi.com.vn',
+		Accept: '*/*',
+	},
+})
 
 async function unwrap<T>(res: Response, label: string): Promise<T> {
 	if (!res.ok) throw new Error(`${label} returned ${res.status}`)
@@ -224,19 +294,14 @@ export async function fetchChart(symbol: string = DEFAULT_INDEX_SYMBOL, days = 3
 	}
 
 	const candles: OHLCCandle[] = udf.t.map((t, i) => ({
-		time: new Date(t * 1000).toISOString().split('T')[0],
+		time: toUTCDate(t * 1000),
 		open: udf.o[i],
 		high: udf.h[i],
 		low: udf.l[i],
 		close: udf.c[i],
 	}))
 
-	let changeRate = 0
-	if (candles.length >= 2) {
-		const first = candles[0].open
-		const last = candles[candles.length - 1].close
-		changeRate = first ? ((last - first) / first) * 100 : 0
-	}
+	const changeRate = candles.length >= 2 ? pctChange(candles[0].open, candles.at(-1)!.close) : 0
 
 	return { changeRate, candles }
 }
@@ -307,15 +372,162 @@ export async function fetchStockList(): Promise<StockInfo[]> {
 	}))
 }
 
+/** VN tickers ordered by trading liquidity + market-cap relevance. Position in the array IS the
+ * rank — `POPULAR_VN_TICKERS[0]` is most-prominent, `[N-1]` is least. Used by `searchStocks` to
+ * surface high-volume names above same-prefix peers (e.g. `FUEVFVND` ahead of alphabetically-
+ * earlier `FUEABVND` when the user types `FUE`) and to drive "dumb browse" mode order — typing
+ * `ETF` returns every ETF in this rank order, popular ones first.
+ *
+ * Curated by hand from market data (HOSE top market-cap × ADV, ETF AUM rankings, index follow
+ * counts). Periodic review on the quarterly VN30/VN100 index review (March / September). Anything
+ * not in this list falls through to alphabetical sort within its match bucket. */
+export const POPULAR_VN_TICKERS: readonly string[] = [
+	// Top indices — most followed, drive the rest of the market reference frame
+	'VNINDEX',
+	'VN30',
+	'VN100',
+	'VNDIAMOND',
+	'HNXINDEX',
+	'HNXUPCOMINDEX',
+	'VNALL',
+	'VNX50',
+	'VNMID',
+	'VNSML',
+	'HNX30',
+	'VNFINLEAD',
+	// Top ETFs by AUM — Diamond + VN30 trackers dominate VN ETF flows
+	'E1VFVN30',
+	'FUEVFVND',
+	'FUESSVFL',
+	'FUEKIV30',
+	'FUEMAVND',
+	'FUEKIVND',
+	'FUEIP100',
+	'FUEDCMID',
+	'FUEKIVFS',
+	'FUEABVND',
+	'FUEMAV30',
+	'FUEBFVND',
+	'FUEFCV50',
+	// Banks — VN-Index heavyweights
+	'VCB',
+	'BID',
+	'CTG',
+	'VPB',
+	'MBB',
+	'TCB',
+	'ACB',
+	'STB',
+	'HDB',
+	'TPB',
+	'VIB',
+	'MSB',
+	// Vingroup family
+	'VIC',
+	'VHM',
+	'VRE',
+	// Steel / industrial / energy / chemicals / utilities
+	'HPG',
+	'HSG',
+	'NKG',
+	'GAS',
+	'PLX',
+	'PVS',
+	'BSR',
+	'GVR',
+	'DGC',
+	'DCM',
+	'DPM',
+	'POW',
+	'REE',
+	// Tech / consumer / aviation / pharma
+	'FPT',
+	'CMG',
+	'MWG',
+	'MSN',
+	'VNM',
+	'SAB',
+	'VJC',
+	'HVN',
+	'PNJ',
+	'DHG',
+	// Brokers
+	'SSI',
+	'VND',
+	'HCM',
+	'VCI',
+	// Real estate / industrial parks
+	'NVL',
+	'KDH',
+	'DXG',
+	'KBC',
+	'BCM',
+	'IDC',
+	'SZC',
+] as const
+
+const POPULAR_RANK: Map<string, number> = new Map(POPULAR_VN_TICKERS.map((s, i) => [s, i]))
+
+/** "Dumb browse" keyword → SSI kind-letter. When the picker query matches one of these (case-
+ * insensitive, post-trim, EXACT — not as a substring), search short-circuits the regular
+ * prefix/substring buckets and returns every entry of that kind sorted by popularity. Lets users
+ * find long, hard-to-remember ETF symbols (`FUEVFVND`, `FUESSVFL`, …) by typing the category
+ * name when they don't recall the ticker.
+ *
+ * Keyword set is intentionally small + unambiguous — single-word category names with their
+ * common plurals. No SSI symbol literally equals any of these words, so the override is safe
+ * (a future symbol named `ETF` would hide the browse keyword, but that's an unlikely listing). */
+const BROWSE_KEYWORDS: Record<string, string> = {
+	ETF: 'e',
+	ETFS: 'e',
+	INDEX: 'i',
+	INDICES: 'i',
+	INDEXES: 'i',
+	STOCK: 's',
+	STOCKS: 's',
+	BOND: 'b',
+	BONDS: 'b',
+	WARRANT: 'w',
+	WARRANTS: 'w',
+	FUTURE: 'f',
+	FUTURES: 'f',
+}
+
+/** Sort comparator: `POPULAR_VN_TICKERS` rank ascending (lower index wins), then alphabetical
+ * by symbol as a stable tiebreaker for non-popular entries. */
+function comparePopularity(a: StockInfo, b: StockInfo): number {
+	const aRank = POPULAR_RANK.get(a.symbol) ?? Infinity
+	const bRank = POPULAR_RANK.get(b.symbol) ?? Infinity
+	if (aRank !== bRank) return aRank - bRank
+	return a.symbol.localeCompare(b.symbol)
+}
+
 /**
- * Rank-search helper for the stock picker. Prefix match on symbol wins over substring name matches.
- * Pure function — callable from client code once it holds a StockInfo[] list in memory.
- */
-export function searchStocks(query: string, list: StockInfo[], limit = 20): StockInfo[] {
+ * Rank-search helper for the stock picker. Two modes:
+ *
+ * 1. **Browse mode** — `query` matches a `BROWSE_KEYWORDS` entry (e.g. `"ETF"`, `"Indices"`):
+ *    return every dictionary entry of that kind, popularity-ordered. Lets users explore long-
+ *    tail tickers they don't remember by typing the category name.
+ * 2. **Search mode** — anything else: prefix → substring → name buckets, each popularity-sorted
+ *    internally so high-volume names surface above same-prefix peers (FUEVFVND ahead of
+ *    FUEABVND, VN30 ahead of VN30F1M, etc.).
+ *
+ * Pure function — callable from server route or browser cache as long as the caller holds a
+ * `StockInfo[]` in memory. */
+export function searchStocks(query: string, list: StockInfo[], limit = 25): StockInfo[] {
 	const q = query.trim().toUpperCase()
 	// Empty/whitespace query — return nothing so the UI can prompt "Type a ticker…" instead of
 	// leaking SSI's arbitrary list ordering (warrants/bonds first, etc.).
 	if (!q) return []
+
+	// Browse mode: exact keyword match → every entry of that kind, popularity-ordered.
+	const browseKind = BROWSE_KEYWORDS[q]
+	if (browseKind) {
+		return list
+			.filter((r) => r.type === browseKind)
+			.sort(comparePopularity)
+			.slice(0, limit)
+	}
 
 	const symbolPrefix: StockInfo[] = []
 	const symbolSubstring: StockInfo[] = []
@@ -334,6 +546,11 @@ export function searchStocks(query: string, list: StockInfo[], limit = 20): Stoc
 		const haystack = `${row.companyNameVi} ${row.companyNameEn} ${row.fullName}`.toUpperCase()
 		if (haystack.includes(q)) nameSubstring.push(row)
 	}
+
+	// Sort each bucket by popularity-then-alpha so high-volume names lead within their match tier.
+	symbolPrefix.sort(comparePopularity)
+	symbolSubstring.sort(comparePopularity)
+	nameSubstring.sort(comparePopularity)
 
 	return [...symbolPrefix, ...symbolSubstring, ...nameSubstring].slice(0, limit)
 }

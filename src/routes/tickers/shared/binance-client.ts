@@ -1,3 +1,7 @@
+import { createFetchWithTimeout } from './fetch-with-timeout'
+import { toUTCDate } from './ict-date'
+import { pctChange } from './number-format'
+
 // Binance mirrors — api-gcp is primary (reliably reachable from CF Workers); api (AWS)
 // is the documented fallback. Either can flip to IP-pool-blocked without notice, so we
 // try the active one, retry the other on block signals, and stick on whichever succeeded.
@@ -8,12 +12,6 @@ const BASES = ['https://api-gcp.binance.com', 'https://api.binance.com']
 // per outage — negligible at our traffic, and it's the only layer we need since the Cache
 // API debounce absorbs within-colo bursts anyway.
 let activeIdx = 0
-
-const HEADERS = {
-	Accept: 'application/json',
-}
-
-const FETCH_TIMEOUT_MS = 5000
 
 // --- Types ---
 
@@ -64,13 +62,10 @@ type BinanceKline = [number, string, string, string, string, string, number, str
 
 // --- Fetch helpers ---
 
-function withTimeout(url: string, init?: RequestInit): Promise<Response> {
-	return globalThis.fetch(url, {
-		...init,
-		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-		headers: { ...HEADERS, ...init?.headers },
-	})
-}
+const withTimeout = createFetchWithTimeout({
+	timeoutMs: 5_000,
+	headers: { Accept: 'application/json' },
+})
 
 // 403/451 = CF egress block signature from Binance's edge. 429/5xx are Binance-side and
 // shared by both mirrors, so we do NOT fall back on those.
@@ -118,7 +113,7 @@ export async function fetchCryptoTickers(symbols: CryptoSymbol[] = ALL_SYMBOLS):
 
 	return data.map(
 		(t): CryptoTicker => ({
-			symbol: t.symbol as CryptoSymbol,
+			symbol: t.symbol,
 			lastPrice: parseFloat(t.lastPrice),
 			priceChange: parseFloat(t.priceChange),
 			priceChangePercent: parseFloat(t.priceChangePercent),
@@ -246,7 +241,7 @@ const KNOWN_QUOTES = [
 	'AUD',
 	'CZK',
 	'RON',
-]
+] as const
 
 export function splitCryptoSymbol(symbol: string): { base: string; quote: string } | null {
 	const s = symbol.toUpperCase()
@@ -278,7 +273,7 @@ export async function fetchCryptoKlines(symbol: CryptoSymbol, limit = 365): Prom
 	const data: BinanceKline[] = await res.json()
 
 	const candles: CryptoKline[] = data.map((k) => ({
-		time: new Date(k[0]).toISOString().split('T')[0],
+		time: toUTCDate(k[0]),
 		open: parseFloat(k[1]),
 		high: parseFloat(k[2]),
 		low: parseFloat(k[3]),
@@ -286,12 +281,7 @@ export async function fetchCryptoKlines(symbol: CryptoSymbol, limit = 365): Prom
 		volume: parseFloat(k[5]),
 	}))
 
-	let changeRate = 0
-	if (candles.length >= 2) {
-		const first = candles[0].open
-		const last = candles[candles.length - 1].close
-		changeRate = first ? ((last - first) / first) * 100 : 0
-	}
+	const changeRate = candles.length >= 2 ? pctChange(candles[0].open, candles.at(-1)!.close) : 0
 
 	return { changeRate, candles }
 }

@@ -1,5 +1,5 @@
-import { logServerError } from '$lib/server-log'
-import { error, json } from '@sveltejs/kit'
+import { serverError502 } from '$lib/server-log'
+import { json } from '@sveltejs/kit'
 
 import { fetchCryptoTickers } from '../../../shared/binance-client'
 import { probeCache } from '../../cache'
@@ -10,7 +10,9 @@ const DEBOUNCE_TTL_MS = 5 * 60 * 1000 // 5 min — dedup rapid-fire requests and
 
 export const GET: RequestHandler = async () => {
 	const { debounced, cache } = await probeCache(CACHE_KEY, DEBOUNCE_TTL_MS)
-	if (debounced) return debounced
+	// Match every other tickers route — `.clone()` per use site so any future middleware that
+	// touches the body (e.g. response-header transform in hooks.server.ts) stays safe.
+	if (debounced) return debounced.clone()
 
 	try {
 		const tickers = await fetchCryptoTickers()
@@ -23,7 +25,6 @@ export const GET: RequestHandler = async () => {
 		if (cache) await cache.put(CACHE_KEY, response.clone())
 		return response
 	} catch (e) {
-		logServerError('binance-ticker-error', e)
-		error(502, 'crypto upstream unavailable')
+		return serverError502('binance-ticker-error', e, 'crypto upstream unavailable')
 	}
 }

@@ -168,7 +168,7 @@ async function probeUpstream(u: Upstream): Promise<UpstreamResult> {
 }
 
 function summarize(values: number[]): LatencyStats {
-	const sorted = [...values].sort((a, b) => a - b)
+	const sorted = values.toSorted((a, b) => a - b)
 	const n = sorted.length
 	const median = n % 2 === 1 ? sorted[(n - 1) / 2] : Math.round((sorted[n / 2 - 1] + sorted[n / 2]) / 2)
 	const mean = Math.round(values.reduce((sum, v) => sum + v, 0) / n)
@@ -185,8 +185,11 @@ export const GET: RequestHandler = async ({ request, platform }) => {
 		return json({ error: 'Ops endpoint disabled — set OPS_TOKEN secret to enable' }, { status: 503 })
 	}
 
+	// RFC 6750: Bearer scheme is case-insensitive — accept any case for the scheme prefix
+	// (e.g. `bearer`, `BEARER`); the token itself stays case-sensitive.
 	const auth = request.headers.get('Authorization')
-	const provided = auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null
+	const bearerMatch = auth?.match(/^Bearer\s+(.+)$/i)
+	const provided = bearerMatch?.[1] ?? null
 	if (!provided || !(await timingSafeEqualString(provided, expected))) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}

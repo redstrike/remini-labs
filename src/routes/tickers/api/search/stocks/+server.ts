@@ -1,10 +1,6 @@
-import { logServerError } from '$lib/server-log'
-import { error, json } from '@sveltejs/kit'
-
 import { fetchStockList, searchStocks, type StockInfo } from '../../../shared/ssi-iboard-client'
-import type { RequestHandler } from './$types'
+import { createDictSearchHandler } from '../../dict-search-handler'
 
-const CACHE_KEY = 'https://remini-labs.internal/tickers/api/search/stocks/dict'
 // 7 days — VN IPOs/delistings happen weekly at most; quarterly index reviews still land within window.
 const FRESH_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -21,59 +17,28 @@ const KIND_MAP: Record<string, string> = {
 	b: 'bond', // VIC123029 = Tập đoàn Vingroup bond series
 }
 
-async function buildAndStore(cache: Cache | null): Promise<StockInfo[]> {
-	const list = await fetchStockList()
-	if (cache) {
-		await cache.put(
-			CACHE_KEY,
-			new Response(JSON.stringify(list), {
-				headers: {
-					'Content-Type': 'application/json',
-					'Cache-Control': 'public, max-age=604800, must-revalidate',
-					'X-Cached-At': String(Date.now()),
-				},
-			}),
-		)
-	}
-	return list
+interface StockMatch {
+	symbol: string
+	name: string
+	kind: string
 }
 
-export const GET: RequestHandler = async ({ url, platform }) => {
-	const q = url.searchParams.get('q') ?? ''
-	const cache = (await globalThis.caches?.open('tickers')) ?? null
-
-	let list: StockInfo[] | null = null
-
-	if (cache) {
-		const cached = await cache.match(CACHE_KEY)
-		if (cached) {
-			list = (await cached.json()) as StockInfo[]
-			const age = Date.now() - Number(cached.headers.get('X-Cached-At') || 0)
-			if (age >= FRESH_MS && platform?.context?.waitUntil) {
-				platform.context.waitUntil(
-					buildAndStore(cache).catch((e) => logServerError('stock-dict-refresh-error', e)),
-				)
-			}
-		}
-	}
-
-	// No cached list (cold cache OR dev where Workers Cache is absent): build it now.
-	if (!list) {
-		try {
-			list = await buildAndStore(cache)
-		} catch (e) {
-			logServerError('ssi-iboard-stock-info-error', e)
-			error(502, 'stock symbol dict unavailable')
-		}
-	}
-
-	// Slim each match to {symbol, name, kind}. `kind` drives quote routing downstream (indices use
-	// /exchange-index/{SYMBOL}, everything else uses /stock/{SYMBOL}) and lets the picker badge types.
-	const matches = searchStocks(q, list, 10).map((r) => ({
+// Slim each match to {symbol, name, kind}. `kind` drives quote routing downstream (indices use
+// /exchange-index/{SYMBOL}, everything else uses /stock/{SYMBOL}) and lets the picker badge
+// types. Limit 25 leaves room for the "dumb browse" mode (typing `ETF` / `Index` returns every
+// matching kind, popularity-ordered) — alphabetic-only with limit 10 was hiding long ETF
+// symbols like FUEVFVND when the user typed a short prefix like `FUE`.
+export const GET = createDictSearchHandler<StockInfo[], StockInfo, StockMatch>({
+	cacheKey: 'https://remini-labs.internal/tickers/api/search/stocks/dict',
+	freshMs: FRESH_MS,
+	maxAgeSeconds: FRESH_MS / 1000,
+	fetchAll: fetchStockList,
+	search: (q, list) => searchStocks(q, list, 25),
+	mapResult: (r) => ({
 		symbol: r.symbol,
 		name: r.companyNameVi || r.companyNameEn || r.fullName,
 		kind: KIND_MAP[r.type] ?? r.type,
-	}))
-
-	return json(matches, { headers: { 'Cache-Control': 'public, max-age=604800, must-revalidate' } })
-}
+	}),
+	errorTag: { fetch: 'ssi-iboard-stock-info-error', refresh: 'stock-dict-refresh-error' },
+	errorMessage: 'stock symbol dict unavailable',
+})
