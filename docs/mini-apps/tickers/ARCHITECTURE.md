@@ -86,7 +86,7 @@ Polling primitives: metals and crypto use `setInterval` (fixed cadence); stocks 
 
 On tab resume (visibility change): fetch metals/crypto if last fetch > 10s ago; stocks only if `Date.now() >= computeNextPollTime(lastFetch)`.
 
-On mount: if SSR crypto data is older than `SSR_FRESHNESS_MS = 60s` (equals server debounce window), triggers an immediate Binance refetch rather than waiting for the first poll interval.
+On mount: stocks and crypto each fire one batched fetch immediately (covers fixed rows + watchlist) so the client owns live state from first paint onward — SSR is a paint-the-pixels seed for fixed rows, not a freshness contract. Metals defer to their 15-min poll (Phu Quy moves slowly enough that SSR data is good enough until the first interval); forex is lazy (fires only when the Bullion card's tap-to-expand sub-panel is opened).
 
 Chart loading indicator: shown only if a chart fetch takes longer than `LOADING_DELAY_MS = 250ms` — prevents a flash on fast network connections.
 
@@ -145,7 +145,7 @@ Server-side search with 7-day cached dictionaries (Workers Cache, stale-while-re
 
 ### Data flow
 
-- **Crypto watchlist:** merged into the fixed-symbol Binance batch call (`/ticker/24hr`). Same 5-min polling cycle, same visibility refetch. No separate polling loop.
+- **Crypto watchlist:** merged into the fixed-symbol Binance batch call (`/ticker/24hr`). One batched fetch on mount, then 5-min poll + visibility refetch. No separate polling loop. SSR pre-paints the fixed BTC/ETH/SOL triple only — watchlist symbols hydrate on mount because `localStorage` isn't visible to SSR.
 - **Stock watchlist:** single batched `Promise.allSettled` over `[...VN_STOCK_FIXED, ...watchlist.stocks]` deduped — per-symbol endpoint routing inside the loop (`isVnIndex(symbol)` → `/spots/stocks` for indices like VNINDEX/VN30/VNMID, `/stocks/quote` for equities like VCB/FPT). Both shapes (`IndexQuote | StockQuote`) land in the same `stockQuotes` Map. Rides the existing VN market schedule. Immediate fetch on mount (bypasses schedule delay for first load) so all `VN_STOCK_FIXED` rows + watchlist symbols populate without waiting for the schedule.
 - **Single-symbol smart fetch on add:** `fetchOneStock(symbol)` mirrors `fetchOneCrypto` — when the user picks a new watchlist symbol, only that symbol is fetched (auto-routes indices to `/spots/stocks`, equities to `/stocks/quote`) and merged into the Map without disturbing existing rows. Cheaper than re-batching the whole list on each add.
 - **Charts:** watchlist crypto → `fetchCryptoKlines(symbol)`, watchlist stocks → `/charts/stocks?symbol=X` (SSI handles both indices and stocks). Cache TTL follows asset type (crypto = 5 min, stock = VN market phase).

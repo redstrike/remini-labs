@@ -94,16 +94,12 @@ interface TickersData {
 	goldChart: Promise<{ data: ChartData | null; cachedAt: number }> | null
 }
 
-// Matches server's DEBOUNCE_TTL. An SSR response older than this means the server served
-// a stale-fallback (both Binance mirrors were unreachable during SSR) — trigger an
-// immediate refetch on mount to try again from the client's IP.
-const SSR_FRESHNESS_MS = 60 * 1000
-
 // Crypto symbols rendered as fixed rows on the Binance tab — Binance's full pair symbols, not
-// the human-friendly "BTC" labels (the watchlist stores raw upstream symbols). Sourced once and
-// passed to `createWatchlist({ reservedCrypto })` so the picker rejects them and the persisted
+// the human-friendly "BTC" labels (the watchlist stores raw upstream symbols). Sourced from
+// `CRYPTO_SYMBOLS` (the keyed lookup above) so there's exactly one source of truth, and passed
+// to `createWatchlist({ reservedCrypto })` so the picker rejects them and the persisted
 // watchlist auto-prunes any historical entries that overlap.
-const CRYPTO_FIXED_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'] as const
+const CRYPTO_FIXED_SYMBOLS = Object.values(CRYPTO_SYMBOLS)
 
 export function useTickers(initialData: TickersData) {
 	const bus = createEventBus<TickersEvents>()
@@ -146,13 +142,14 @@ export function useTickers(initialData: TickersData) {
 		return () => clearInterval(interval)
 	})
 
-	// Poll crypto every 5 min — client only. Initial data comes from SSR.
-	// On mount: if SSR data is stale (older than server's debounce window) or missing
-	// (SSR errored), trigger an immediate Binance fetch rather than wait for the poll.
+	// Crypto data flow — SSR seeds the fixed BTC/ETH/SOL triple via `/api/spots/crypto` so the
+	// page paints with prices on first byte. The client owns the live state from mount onward:
+	// one batched `/ticker/24hr` call covering fixed + watchlist on mount, then again every
+	// CRYPTO_POLL_MS. Symmetric with `fetchStocks()` below — SSR is a paint-the-pixels seed,
+	// the client always refreshes once on mount and on every poll thereafter.
 	$effect(() => {
 		if (!browser) return
-		const ssrStale = !initialData.cryptoCachedAt || Date.now() - initialData.cryptoCachedAt > SSR_FRESHNESS_MS
-		if (ssrStale) fetchCryptoTickers()
+		fetchCryptoTickers()
 		const interval = setInterval(fetchCryptoTickers, CRYPTO_POLL_MS)
 		return () => clearInterval(interval)
 	})
@@ -311,7 +308,7 @@ export function useTickers(initialData: TickersData) {
 	// the optimistic (cheaper) street-rate conversion.
 	const usdVndAvg = $derived(priceTable?.usdVndAvg ?? null)
 
-	// Crypto tickers — SSR-primed; client polls Binance directly every CRYPTO_POLL_MS.
+	// Crypto tickers — SSR-primed; client refetches on mount and then every CRYPTO_POLL_MS.
 	let cryptoTickers = $state<CryptoTicker[]>(initialData.crypto ?? [])
 
 	function getCryptoTicker(id: CryptoId): CryptoTicker | null {
